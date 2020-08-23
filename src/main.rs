@@ -3,12 +3,14 @@ use std::env;
 use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 // third-party imports
 use ansi_term::Colour;
+use capnp::serialize::write_message;
 use chrono::{FixedOffset, Local, TimeZone};
 use chrono_tz::{Tz, UTC};
+use error_chain::ChainedError;
 use isatty::stdout_isatty;
 use structopt::clap::arg_enum;
 use structopt::StructOpt;
@@ -16,6 +18,7 @@ use structopt::StructOpt;
 // local imports
 use hl::datefmt::LinuxDateFormat;
 use hl::error::*;
+use hl::index::Indexer;
 use hl::input::{open, ConcatReader, Input, InputStream};
 use hl::output::{OutputStream, Pager};
 use hl::signal::SignalHandler;
@@ -244,7 +247,15 @@ fn run() -> Result<()> {
 
 fn main() {
     if let Err(err) = run() {
-        eprintln!("{}: {}", Colour::Red.paint("error"), err);
+        eprintln!("{}", err.display_chain());
         process::exit(1);
     }
 }
+
+// let files = opt.files.clone();
+// let ix = Indexer::new(concurrency, buffer_size, PathBuf::from("."));
+// ix.run(files)?;
+// // let mut f = ix.file("test", 42, SystemTime::UNIX_EPOCH);
+// // let mut f = ib.file("tesa", 43, SystemTime::UNIX_EPOCH);
+// // write_message(std::io::stdout(), ib.message());
+// return Ok(());
