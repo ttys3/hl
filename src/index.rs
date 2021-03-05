@@ -213,12 +213,9 @@ impl Indexer {
                         }
                         None => (),
                     }
-                    let ts = match rec.ts() {
-                        Some(ts) => ts.parse(),
-                        None => None,
-                    };
+                    let ts = rec.ts().and_then(|ts| ts.parse());
                     if let Some(ts) = ts {
-                        let ts = ts.timestamp();
+                        let ts = (ts.timestamp(), ts.timestamp_subsec_nanos());
                         if Some(ts) < prev_ts {
                             sorted = false;
                         }
@@ -233,8 +230,8 @@ impl Indexer {
                 }
             }
         }
-        if sorted {
-            stat.flags |= schema::FLAG_SORTED;
+        if !sorted {
+            stat.flags |= schema::FLAG_UNSORTED;
         }
         stat
     }
@@ -256,11 +253,12 @@ impl Index {
         let message = read_message(input, message::ReaderOptions::new())?;
         let root: schema::root::Reader = message.get_root()?;
         let source = root.get_source()?;
+        let modified = source.get_modified();
         Ok(Index {
             source: SourceFile {
                 size: source.get_size(),
                 path: source.get_path()?.into(),
-                modified: source.get_modified(),
+                modified: (modified.get_sec(), modified.get_nsec()),
                 stat: Self::load_stat(source.get_size(), source.get_index()?),
                 blocks: Self::load_blocks(source)?,
             },
@@ -275,7 +273,9 @@ impl Index {
         let mut source = root.init_source();
         source.set_size(self.source.size);
         source.set_path(&self.source.path);
-        source.set_modified(self.source.modified);
+        let mut modified = source.reborrow().init_modified();
+        modified.set_sec(self.source.modified.0);
+        modified.set_nsec(self.source.modified.1);
         let mut index = source.reborrow().init_index();
         Self::save_stat(index.reborrow(), &self.source.stat);
         let mut blocks = source.init_blocks(self.source.blocks.len() as u32);
@@ -299,7 +299,10 @@ impl Index {
             lines_valid: lines.get_valid(),
             lines_invalid: lines.get_invalid(),
             ts_min_max: if ts.get_present() {
-                Some((ts.get_min(), ts.get_max()))
+                Some((
+                    (ts.get_min().get_sec(), ts.get_min().get_nsec()),
+                    (ts.get_max().get_sec(), ts.get_max().get_nsec()),
+                ))
             } else {
                 None
             },
@@ -325,8 +328,13 @@ impl Index {
         lines.set_invalid(stat.lines_invalid);
         if let Some((min, max)) = stat.ts_min_max {
             let mut timestamps = index.init_timestamps();
-            timestamps.set_min(min);
-            timestamps.set_max(max);
+            timestamps.set_present(true);
+            let mut ts_min = timestamps.reborrow().init_min();
+            ts_min.set_sec(min.0);
+            ts_min.set_nsec(min.1);
+            let mut ts_max = timestamps.init_max();
+            ts_max.set_sec(max.0);
+            ts_max.set_nsec(max.1);
         }
     }
 }
@@ -337,7 +345,7 @@ impl Index {
 pub struct SourceFile {
     pub size: u64,
     pub path: String,
-    pub modified: i64,
+    pub modified: (i64, u32),
     pub stat: Stat,
     pub blocks: Vec<SourceBlock>,
 }
@@ -363,7 +371,7 @@ pub struct Stat {
     pub flags: u64,
     pub lines_valid: u64,
     pub lines_invalid: u64,
-    pub ts_min_max: Option<(i64, i64)>,
+    pub ts_min_max: Option<((i64, u32), (i64, u32))>,
 }
 
 impl Stat {
@@ -377,7 +385,7 @@ impl Stat {
         }
     }
 
-    pub fn add_valid(&mut self, ts: i64, flags: u64) {
+    pub fn add_valid(&mut self, ts: (i64, u32), flags: u64) {
         self.ts_min_max = min_max_opt(self.ts_min_max, Some((ts, ts)));
         self.flags |= flags;
         self.lines_valid += 1;
@@ -447,12 +455,12 @@ fn min_max_opt<T: Ord>(v1: Option<(T, T)>, v2: Option<(T, T)>) -> Option<(T, T)>
     }
 }
 
-fn ts(ts: SystemTime) -> i64 {
+fn ts(ts: SystemTime) -> (i64, u32) {
     match ts.duration_since(UNIX_EPOCH) {
-        Ok(ts) => ts.as_secs() as i64,
+        Ok(ts) => (ts.as_secs() as i64, ts.subsec_nanos()),
         Err(_) => match UNIX_EPOCH.duration_since(ts) {
-            Ok(ts) => -(ts.as_secs() as i64),
-            Err(_) => 0,
+            Ok(ts) => (-(ts.as_secs() as i64), ts.subsec_nanos()),
+            Err(_) => (0, 0),
         },
     }
 }

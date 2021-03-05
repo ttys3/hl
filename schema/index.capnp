@@ -10,9 +10,12 @@ struct SourceFile {
     size @0 :UInt64;
     sha256 @1 :Data;
     path @2 :Text;
-    modified @3 :Timestamp;
-    index @4 :Index;
-    blocks @5 :List(SourceBlock);
+    modified :group{
+        sec @3 :Int64;
+        nsec @4 :UInt32;
+    }
+    index @5 :Index;
+    blocks @6 :List(SourceBlock);
 }
 
 # Block is an information about a part of source log file.
@@ -31,8 +34,14 @@ struct Index {
     }
     timestamps :group {
         present @3 :Bool;
-        min @4 :Timestamp;
-        max @5 :Timestamp;
+        min :group {
+            sec @4 :Int64;
+            nsec @5 :UInt32;
+        }
+        max :group {
+            sec @6 :Int64;
+            nsec @7 :UInt32;
+        }
     }
 }
 
@@ -42,11 +51,8 @@ const flagLevelDebug :UInt64   = 0x0000000000000001;
 const flagLevelInfo :UInt64    = 0x0000000000000002;
 const flagLevelWarning :UInt64 = 0x0000000000000004;
 const flagLevelError :UInt64   = 0x0000000000000008;
-const flagSorted :UInt64       = 0x0000000000000100;
+const flagUnsorted :UInt64     = 0x0000000000000100;
 const flagBinary :UInt64       = 0x8000000000000000;
-
-# Timestamp is a Unix timestamp in millisecond precision (milliseconds elapsed since Jan 1 1970).
-using Timestamp = Int64;
 
 # Magic holds some simple signature to quickly detect if the file content is valid.
 using Magic = UInt64;

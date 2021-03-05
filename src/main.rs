@@ -281,9 +281,25 @@ fn run() -> Result<()> {
 
     let files = opt.files.clone();
     let run_indexer = || {
-        let ix = Indexer::new(concurrency, buffer_size, PathBuf::from("."));
+        let ixer = Indexer::new(concurrency, buffer_size, PathBuf::from("."));
         for file in files {
-            ix.index(file)?;
+            let ix = ixer.index(file)?;
+            let source = ix.source();
+            println!("size:               {}", source.size);
+            println!("path:               {}", source.path);
+            println!("modified:           {:?}", source.modified);
+            println!("stat.size:          {}", source.stat.size);
+            println!("stat.flags:         {}", source.stat.flags);
+            println!("stat.lines_valid:   {}", source.stat.lines_valid);
+            println!("stat.lines_invalid: {}", source.stat.lines_invalid);
+            println!("stat.ts_min_max:    {:?}", source.stat.ts_min_max);
+            println!("blocks:             {}", source.blocks.len());
+            for (i, block) in source.blocks.iter().enumerate() {
+                println!("block {} offset:       {:?}", i, block.offset);
+                println!("block {} size:         {:?}", i, block.stat.size);
+                println!("block {} flags:        {:?}", i, block.stat.flags);
+                println!("block {} ts_min_max:   {:?}", i, block.stat.ts_min_max);
+            }
         }
         // let mut f = ix.file("test", 42, SystemTime::UNIX_EPOCH);
         // let mut f = ib.file("tesa", 43, SystemTime::UNIX_EPOCH);
