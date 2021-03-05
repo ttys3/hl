@@ -18,7 +18,7 @@ pub struct ConcatReader<I> {
 }
 
 pub fn open(path: &PathBuf) -> Result<Input> {
-    let name = format!("file '{}'", Colour::Yellow.paint(path.to_string_lossy()),);
+    let name = format!("file '{}'", Colour::Yellow.paint(path.to_string_lossy()));
 
     let f = File::open(path)
         .map_err(|e| Error::new(e.kind(), format!("failed to open {}: {}", name, e)))?;

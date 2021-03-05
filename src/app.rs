@@ -1,6 +1,8 @@
+// std imports
 use std::io::{Read, Write};
 use std::sync::Arc;
 
+// third-party imports
 use chrono::FixedOffset;
 use closure::closure;
 use crossbeam_channel as channel;
@@ -9,6 +11,7 @@ use crossbeam_utils::thread;
 use itertools::izip;
 use serde_json as json;
 
+// local imports
 use crate::datefmt::{DateTimeFormat, DateTimeFormatter};
 use crate::error::*;
 use crate::formatting::RecordFormatter;
@@ -16,6 +19,8 @@ use crate::model::{Filter, Record};
 use crate::scanning::{BufFactory, ScannedSegment, Scanner, Segment, SegmentFactory};
 use crate::theme::Theme;
 use crate::IncludeExcludeKeyFilter;
+
+// ---
 
 pub struct Options {
     pub theme: Arc<Theme>,
