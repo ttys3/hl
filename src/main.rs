@@ -19,7 +19,7 @@ use structopt::StructOpt;
 use hl::datefmt::LinuxDateFormat;
 use hl::error::*;
 use hl::index::Indexer;
-use hl::input::{open, ConcatReader, Input, InputStream};
+use hl::input::{ConcatReader, Input, InputReference, InputStream};
 use hl::output::{OutputStream, Pager};
 use hl::signal::SignalHandler;
 use hl::{IncludeExcludeKeyFilter, KeyMatchOptions};
@@ -235,22 +235,20 @@ fn run() -> Result<()> {
     });
 
     // Configure input.
-    let inputs = opt
+    let mut inputs = opt
         .files
         .iter()
         .map(|x| {
             if x.to_str() == Some("-") {
-                Ok(Input::new("<stdin>".into(), Box::new(std::io::stdin())))
+                InputReference::Stdin
             } else {
-                open(&x)
+                InputReference::File(x.clone())
             }
         })
-        .collect::<std::io::Result<Vec<_>>>()?;
-    let mut input: InputStream = if inputs.len() == 0 {
-        Box::new(std::io::stdin())
-    } else {
-        Box::new(ConcatReader::new(inputs.into_iter().map(|x| Ok(x))))
-    };
+        .collect::<Vec<_>>();
+    if inputs.len() == 0 {
+        inputs.push(InputReference::Stdin);
+    }
     let paging = match opt.paging {
         Paging::Auto => {
             if stdout_is_atty() {
@@ -274,51 +272,47 @@ fn run() -> Result<()> {
     };
 
     // Run the app.
-    let run = || match app.run(input.as_mut(), output.as_mut()) {
+    let run = || match app.run(inputs, output.as_mut()) {
         Ok(()) => Ok(()),
         Err(Error(ErrorKind::Io(ref e), _)) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
         Err(err) => Err(err),
     };
 
-    let files = opt.files.clone();
-    let run_indexer = || {
-        let cache_dir = directories::BaseDirs::new()
-            .and_then(|d| Some(d.cache_dir().into()))
-            .unwrap_or(PathBuf::from(".cache"))
-            .join("github.com/pamburus/hl");
-        fs::create_dir_all(&cache_dir)?;
-        let ixer = Indexer::new(concurrency, buffer_size, cache_dir);
-        for file in files {
-            let ix = ixer.index(file)?;
-            let source = ix.source();
-            println!("size:               {}", source.size);
-            println!("path:               {}", source.path);
-            println!("modified:           {:?}", source.modified);
-            println!("stat.size:          {}", source.stat.size);
-            println!("stat.flags:         {}", source.stat.flags);
-            println!("stat.lines_valid:   {}", source.stat.lines_valid);
-            println!("stat.lines_invalid: {}", source.stat.lines_invalid);
-            println!("stat.ts_min_max:    {:?}", source.stat.ts_min_max);
-            println!("blocks:             {}", source.blocks.len());
-            for (i, block) in source.blocks.iter().enumerate() {
-                println!("block {} offset:       {:?}", i, block.offset);
-                println!("block {} size:         {:?}", i, block.stat.size);
-                println!("block {} flags:        {:?}", i, block.stat.flags);
-                println!("block {} ts_min_max:   {:?}", i, block.stat.ts_min_max);
-            }
-        }
-        // let mut f = ix.file("test", 42, SystemTime::UNIX_EPOCH);
-        // let mut f = ib.file("tesa", 43, SystemTime::UNIX_EPOCH);
-        // write_message(std::io::stdout(), ib.message());
-        Ok(())
-    };
+    // let files = opt.files.clone();
+    // let run_indexer = || {
+    //     let cache_dir = directories::BaseDirs::new()
+    //         .and_then(|d| Some(d.cache_dir().into()))
+    //         .unwrap_or(PathBuf::from(".cache"))
+    //         .join("github.com/pamburus/hl");
+    //     fs::create_dir_all(&cache_dir)?;
+    //     let ixer = Indexer::new(concurrency, buffer_size, cache_dir);
+    //     for file in files {
+    //         let ix = ixer.index(file)?;
+    //         let source = ix.source();
+    //         println!("size:               {}", source.size);
+    //         println!("path:               {}", source.path);
+    //         println!("modified:           {:?}", source.modified);
+    //         println!("stat.size:          {}", source.stat.size);
+    //         println!("stat.flags:         {}", source.stat.flags);
+    //         println!("stat.lines_valid:   {}", source.stat.lines_valid);
+    //         println!("stat.lines_invalid: {}", source.stat.lines_invalid);
+    //         println!("stat.ts_min_max:    {:?}", source.stat.ts_min_max);
+    //         println!("blocks:             {}", source.blocks.len());
+    //         for (i, block) in source.blocks.iter().enumerate() {
+    //             println!("block {} offset:       {:?}", i, block.offset);
+    //             println!("block {} size:         {:?}", i, block.stat.size);
+    //             println!("block {} flags:        {:?}", i, block.stat.flags);
+    //             println!("block {} ts_min_max:   {:?}", i, block.stat.ts_min_max);
+    //         }
+    //     }
+    //     // let mut f = ix.file("test", 42, SystemTime::UNIX_EPOCH);
+    //     // let mut f = ib.file("tesa", 43, SystemTime::UNIX_EPOCH);
+    //     // write_message(std::io::stdout(), ib.message());
+    //     Ok(())
+    // };
 
     // Run the app with signal handling.
-    SignalHandler::run(
-        opt.interrupt_ignore_count,
-        Duration::from_secs(1),
-        run_indexer,
-    )
+    SignalHandler::run(opt.interrupt_ignore_count, Duration::from_secs(1), run)
 }
 
 fn main() {

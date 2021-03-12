@@ -32,7 +32,7 @@ use sha2::{Digest, Sha256};
 // local imports
 use crate::error::*;
 use crate::index_capnp as schema;
-use crate::input;
+use crate::input::Input;
 use crate::model::Record;
 use crate::scanning::{BufFactory, ScannedSegment, Scanner, Segment, SegmentFactory};
 use crate::types::Level;
@@ -82,7 +82,7 @@ impl Indexer {
     }
 
     fn build_index(&self, source_path: &PathBuf, index_path: &PathBuf) -> Result<Index> {
-        let mut input = input::open(&source_path).chain_err(|| {
+        let mut input = Input::open(&source_path).chain_err(|| {
             format!(
                 "failed to open file '{}' for reading",
                 HILITE.paint(source_path.to_string_lossy()),

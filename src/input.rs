@@ -5,6 +5,11 @@ use std::path::PathBuf;
 use ansi_term::Colour;
 use flate2::bufread::GzDecoder;
 
+pub enum InputReference {
+    Stdin,
+    File(PathBuf),
+}
+
 pub type InputStream = Box<dyn Read + Send + Sync>;
 
 pub struct Input {
@@ -17,23 +22,20 @@ pub struct ConcatReader<I> {
     item: Option<Input>,
 }
 
-pub fn open(path: &PathBuf) -> Result<Input> {
-    let name = format!("file '{}'", Colour::Yellow.paint(path.to_string_lossy()));
-
-    let f = File::open(path)
-        .map_err(|e| Error::new(e.kind(), format!("failed to open {}: {}", name, e)))?;
-
-    let stream: InputStream = match path.extension().map(|x| x.to_str()) {
-        Some(Some("gz")) => Box::new(GzDecoder::new(BufReader::new(f))),
-        _ => Box::new(f),
-    };
-
-    Ok(Input::new(name, stream))
-}
-
 impl Input {
     pub fn new(name: String, stream: InputStream) -> Self {
         Self { name, stream }
+    }
+
+    pub fn open(path: &PathBuf) -> Result<Self> {
+        let name = format!("file '{}'", Colour::Yellow.paint(path.to_string_lossy()));
+        let f = File::open(path)
+            .map_err(|e| Error::new(e.kind(), format!("failed to open {}: {}", name, e)))?;
+        let stream: InputStream = match path.extension().map(|x| x.to_str()) {
+            Some(Some("gz")) => Box::new(GzDecoder::new(BufReader::new(f))),
+            _ => Box::new(f),
+        };
+        Ok(Self::new(name, stream))
     }
 }
 

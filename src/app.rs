@@ -15,6 +15,7 @@ use serde_json as json;
 use crate::datefmt::{DateTimeFormat, DateTimeFormatter};
 use crate::error::*;
 use crate::formatting::RecordFormatter;
+use crate::input::{ConcatReader, Input, InputReference};
 use crate::model::{Filter, Record};
 use crate::scanning::{BufFactory, ScannedSegment, Scanner, Segment, SegmentFactory};
 use crate::theme::Theme;
@@ -45,9 +46,20 @@ impl App {
 
     pub fn run(
         &self,
-        input: &mut (dyn Read + Send + Sync),
+        inputs: Vec<InputReference>,
         output: &mut (dyn Write + Send + Sync),
     ) -> Result<()> {
+        let inputs = inputs
+            .iter()
+            .map(|x| match x {
+                InputReference::Stdin => {
+                    Ok(Input::new("<stdin>".into(), Box::new(std::io::stdin())))
+                }
+                InputReference::File(filename) => Input::open(&filename),
+            })
+            .collect::<std::io::Result<Vec<_>>>()?;
+
+        let mut input = ConcatReader::new(inputs.into_iter().map(|x| Ok(x)));
         let n = self.options.concurrency;
         let sfi = Arc::new(SegmentFactory::new(self.options.buffer_size));
         let bfo = BufFactory::new(self.options.buffer_size);
@@ -63,7 +75,7 @@ impl App {
             let reader = scope.spawn(closure!(clone sfi, |_| -> Result<()> {
                 let mut sn: usize = 0;
                 let scanner = Scanner::new(sfi, "\n".to_string());
-                for item in scanner.items(input) {
+                for item in scanner.items(&mut input) {
                     if let Err(_) = txi[sn % n].send(item?) {
                         break;
                     }
