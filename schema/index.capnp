@@ -53,6 +53,3 @@ const flagLevelWarning :UInt64 = 0x0000000000000004;
 const flagLevelError :UInt64   = 0x0000000000000008;
 const flagUnsorted :UInt64     = 0x0000000000000100;
 const flagBinary :UInt64       = 0x8000000000000000;
-
-# Magic holds some simple signature to quickly detect if the file content is valid.
-using Magic = UInt64;

@@ -43,6 +43,7 @@ pub type Reader = dyn Read + Send + Sync;
 
 // ---
 
+/// Allows log files indexing to enable message sorting.
 pub struct Indexer {
     concurrency: usize,
     buffer_size: usize,
@@ -50,6 +51,7 @@ pub struct Indexer {
 }
 
 impl Indexer {
+    /// Returns a new Indexer with the given parameters.
     pub fn new(concurrency: usize, buffer_size: usize, dir: PathBuf) -> Self {
         Self {
             concurrency,
@@ -58,6 +60,9 @@ impl Indexer {
         }
     }
 
+    /// Builds index for the given file.
+    ///
+    /// Builds the index, saves it to disk and returns it.
     pub fn index(&self, source_path: PathBuf) -> Result<Index> {
         let hash = hex::encode(sha256(source_path.to_string_lossy().as_bytes()));
         let index_path = self.dir.join(PathBuf::from(hash));
@@ -68,10 +73,12 @@ impl Indexer {
                     HILITE.paint(index_path.to_string_lossy())
                 )
             })?;
-            Index::load(&mut file)
-        } else {
-            self.build_index(&source_path, &index_path)
+            if let Ok(index) = Index::load(&mut file) {
+                return Ok(index);
+            }
         }
+
+        self.build_index(&source_path, &index_path)
     }
 
     fn build_index(&self, source_path: &PathBuf, index_path: &PathBuf) -> Result<Index> {
@@ -239,15 +246,18 @@ impl Indexer {
 
 // ---
 
+// Contains index information for a single source file.
 pub struct Index {
     source: SourceFile,
 }
 
 impl Index {
+    /// Returns index information for the source file.
     pub fn source(&self) -> &SourceFile {
         &self.source
     }
 
+    /// Loads the index.
     pub fn load(input: &mut Reader) -> Result<Index> {
         Header::load(input)?.validate()?;
         let message = read_message(input, message::ReaderOptions::new())?;
@@ -265,6 +275,7 @@ impl Index {
         })
     }
 
+    /// Saves the index.
     pub fn save(&self, output: &mut Writer) -> Result<()> {
         let header = Header::new();
         header.save(output)?;
@@ -341,7 +352,7 @@ impl Index {
 
 // ---
 
-// SourceFile contains index data of scanned source log file.
+/// SourceFile contains index data of scanned source log file.
 pub struct SourceFile {
     pub size: u64,
     pub path: String,
@@ -352,13 +363,14 @@ pub struct SourceFile {
 
 // ---
 
-// SourceBlock contains index data of a block in a scanned source log file.
+/// SourceBlock contains index data of a block in a scanned source log file.
 pub struct SourceBlock {
     pub offset: u64,
     pub stat: Stat,
 }
 
 impl SourceBlock {
+    /// Returns a new SourceBlock.
     pub fn new(offset: u64, stat: Stat) -> Self {
         Self { offset, stat }
     }
@@ -366,6 +378,7 @@ impl SourceBlock {
 
 // ---
 
+/// Stat contains statistical information over a file or over a block.
 pub struct Stat {
     pub size: u64,
     pub flags: u64,
@@ -375,6 +388,7 @@ pub struct Stat {
 }
 
 impl Stat {
+    /// New returns a new Stat.
     pub fn new(size: u64) -> Self {
         Self {
             size,
@@ -385,16 +399,19 @@ impl Stat {
         }
     }
 
+    /// Adds information about a single valid line.
     pub fn add_valid(&mut self, ts: (i64, u32), flags: u64) {
         self.ts_min_max = min_max_opt(self.ts_min_max, Some((ts, ts)));
         self.flags |= flags;
         self.lines_valid += 1;
     }
 
+    /// Counts a single invalid line.
     pub fn add_invalid(&mut self) {
         self.lines_invalid += 1;
     }
 
+    /// Merges with other Stat.
     pub fn merge(&mut self, other: &Self) {
         self.lines_valid += other.lines_valid;
         self.lines_invalid += other.lines_invalid;
