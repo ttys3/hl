@@ -1,5 +1,6 @@
 // std imports
 use std::env;
+use std::fs;
 use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
@@ -281,7 +282,12 @@ fn run() -> Result<()> {
 
     let files = opt.files.clone();
     let run_indexer = || {
-        let ixer = Indexer::new(concurrency, buffer_size, PathBuf::from("."));
+        let cache_dir = directories::BaseDirs::new()
+            .and_then(|d| Some(d.cache_dir().into()))
+            .unwrap_or(PathBuf::from(".cache"))
+            .join("github.com/pamburus/hl");
+        fs::create_dir_all(&cache_dir)?;
+        let ixer = Indexer::new(concurrency, buffer_size, cache_dir);
         for file in files {
             let ix = ixer.index(file)?;
             let source = ix.source();
