@@ -279,7 +279,11 @@ impl Indexer {
                 }
                 bitmap.push(mask);
             }
-            Chronology::new(bitmap, offsets, jumps)
+            Chronology {
+                bitmap,
+                offsets,
+                jumps,
+            }
         };
         (stat, chronology)
     }
@@ -379,7 +383,7 @@ impl Index {
                 offset: block.get_offset(),
                 size: block.get_size(),
                 stat: Self::load_stat(block.get_index()?),
-                chronology: Chronology::new(Vec::new(), Vec::new(), Vec::new()),
+                chronology: Chronology::default(),
             })
         }
         Ok(result)
@@ -489,20 +493,13 @@ pub struct Chronology {
     pub jumps: Vec<u32>,
 }
 
-impl Chronology {
-    /// Returns a new Chronology.
-    pub fn new(bitmap: Vec<u64>, offsets: Vec<OffsetPair>, jumps: Vec<u32>) -> Self {
-        Self {
-            bitmap,
-            offsets,
-            jumps,
-        }
-    }
-}
-
 impl Default for Chronology {
     fn default() -> Self {
-        Self::new(Vec::new(), Vec::new(), Vec::new())
+        Self {
+            bitmap: Vec::new(),
+            offsets: Vec::new(),
+            jumps: Vec::new(),
+        }
     }
 }
 
