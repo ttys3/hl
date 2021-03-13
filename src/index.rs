@@ -181,6 +181,7 @@ impl Indexer {
                                 offset,
                                 size.try_into()?,
                                 stat,
+                                Chronology::new(Vec::new(), Vec::new(), Vec::new()),
                             ));
                             offset += u64::try_from(size)?;
                         }
@@ -295,14 +296,7 @@ impl Index {
         modified.set_nsec(self.source.modified.1);
         let mut index = source.reborrow().init_index();
         Self::save_stat(index.reborrow(), &self.source.stat);
-        let mut blocks = source.init_blocks(self.source.blocks.len().try_into()?);
-        for (i, source_block) in self.source.blocks.iter().enumerate() {
-            let mut block = blocks.reborrow().get(i.try_into()?);
-            block.set_offset(source_block.offset);
-            block.set_size(source_block.size);
-            let mut index = block.init_index();
-            Self::save_stat(index.reborrow(), &source_block.stat);
-        }
+        self.save_blocks(source)?;
         capnp::serialize::write_message(output, &message)?;
         Ok(())
     }
@@ -326,19 +320,6 @@ impl Index {
         }
     }
 
-    fn load_blocks(source: schema::source_file::Reader) -> Result<Vec<SourceBlock>> {
-        let blocks = source.get_blocks()?;
-        let mut result = Vec::with_capacity(blocks.len() as usize);
-        for block in blocks.iter() {
-            result.push(SourceBlock {
-                offset: block.get_offset(),
-                size: block.get_size(),
-                stat: Self::load_stat(block.get_index()?),
-            })
-        }
-        Ok(result)
-    }
-
     fn save_stat(mut index: schema::index::Builder, stat: &Stat) {
         index.set_flags(stat.flags);
         let mut lines = index.reborrow().init_lines();
@@ -353,6 +334,32 @@ impl Index {
             ts_max.set_sec(max.0);
             ts_max.set_nsec(max.1);
         }
+    }
+
+    fn load_blocks(source: schema::source_file::Reader) -> Result<Vec<SourceBlock>> {
+        let blocks = source.get_blocks()?;
+        let mut result = Vec::with_capacity(blocks.len().try_into()?);
+        for block in blocks.iter() {
+            result.push(SourceBlock {
+                offset: block.get_offset(),
+                size: block.get_size(),
+                stat: Self::load_stat(block.get_index()?),
+                chronology: Chronology::new(Vec::new(), Vec::new(), Vec::new()),
+            })
+        }
+        Ok(result)
+    }
+
+    fn save_blocks(&self, source: schema::source_file::Builder) -> Result<()> {
+        let mut blocks = source.init_blocks(self.source.blocks.len().try_into()?);
+        for (i, source_block) in self.source.blocks.iter().enumerate() {
+            let mut block = blocks.reborrow().get(i.try_into()?);
+            block.set_offset(source_block.offset);
+            block.set_size(source_block.size);
+            let mut index = block.init_index();
+            Self::save_stat(index.reborrow(), &source_block.stat);
+        }
+        Ok(())
     }
 }
 
@@ -376,12 +383,18 @@ pub struct SourceBlock {
     pub offset: u64,
     pub size: u32,
     pub stat: Stat,
+    pub chronology: Chronology,
 }
 
 impl SourceBlock {
     /// Returns a new SourceBlock.
-    pub fn new(offset: u64, size: u32, stat: Stat) -> Self {
-        Self { offset, size, stat }
+    pub fn new(offset: u64, size: u32, stat: Stat, chronology: Chronology) -> Self {
+        Self {
+            offset,
+            size,
+            stat,
+            chronology,
+        }
     }
 }
 
@@ -429,6 +442,36 @@ impl Stat {
         self.flags |= other.flags;
         self.ts_min_max = min_max_opt(self.ts_min_max, other.ts_min_max);
     }
+}
+
+// ---
+
+/// Chronology contains information about ordering of log messages by timestamp in a SourceBlock.
+#[derive(Debug)]
+pub struct Chronology {
+    pub bitmap: Vec<u64>,
+    pub offsets: Vec<OffsetPair>,
+    pub jumps: Vec<u32>,
+}
+
+impl Chronology {
+    /// Returns a new Chronology.
+    pub fn new(bitmap: Vec<u64>, offsets: Vec<OffsetPair>, jumps: Vec<u32>) -> Self {
+        Self {
+            bitmap,
+            offsets,
+            jumps,
+        }
+    }
+}
+
+// ---
+
+/// OffsetPair contains information offsets for a line in bytes in a SourceBlock and in a jump table.
+#[derive(Debug)]
+pub struct OffsetPair {
+    pub bytes: u32,
+    pub jumps: u32,
 }
 
 // ---
