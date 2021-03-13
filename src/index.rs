@@ -383,7 +383,7 @@ impl Index {
                 offset: block.get_offset(),
                 size: block.get_size(),
                 stat: Self::load_stat(block.get_index()?),
-                chronology: Chronology::default(),
+                chronology: Self::load_chronology(block.get_chronology()?)?,
             })
         }
         Ok(result)
@@ -395,8 +395,75 @@ impl Index {
             let mut block = blocks.reborrow().get(i.try_into()?);
             block.set_offset(source_block.offset);
             block.set_size(source_block.size);
-            let mut index = block.init_index();
-            Self::save_stat(index.reborrow(), &source_block.stat);
+            Self::save_stat(block.reborrow().init_index(), &source_block.stat);
+            Self::save_chronology(block.init_chronology(), &source_block.chronology)?;
+        }
+        Ok(())
+    }
+
+    fn load_chronology(chronology: schema::chronology::Reader) -> Result<Chronology> {
+        let bitmap = chronology.get_bitmap()?;
+        let bitmap = {
+            let mut result = Vec::with_capacity(bitmap.len().try_into()?);
+            for i in 0..bitmap.len() {
+                result.push(bitmap.get(i));
+            }
+            result
+        };
+        let offsets = chronology.get_offsets();
+        let offsets = {
+            let bytes = offsets.get_bytes()?;
+            let jumps = offsets.get_jumps()?;
+            if bytes.len() != jumps.len() {
+                return Err(ErrorKind::InconsistentIndex(
+                    "offsets bytes and jumps length differ".into(),
+                )
+                .into());
+            }
+            let mut result = Vec::with_capacity(bytes.len().try_into()?);
+            for i in 0..bytes.len() {
+                result.push(OffsetPair {
+                    bytes: bytes.get(i),
+                    jumps: jumps.get(i),
+                });
+            }
+            result
+        };
+        let jumps = chronology.get_jumps()?;
+        let jumps = {
+            let mut result = Vec::with_capacity(jumps.len().try_into()?);
+            for i in 0..jumps.len() {
+                result.push(jumps.get(i));
+            }
+            result
+        };
+        Ok(Chronology {
+            bitmap,
+            offsets,
+            jumps,
+        })
+    }
+
+    fn save_chronology(mut to: schema::chronology::Builder, from: &Chronology) -> Result<()> {
+        let mut bitmap = to.reborrow().init_bitmap(from.bitmap.len().try_into()?);
+        for (i, value) in from.bitmap.iter().enumerate() {
+            bitmap.set(i as u32, value.clone());
+        }
+        let n = from.offsets.len().try_into()?;
+        let mut offsets = to.reborrow().init_offsets();
+        {
+            let mut bytes = offsets.reborrow().init_bytes(n);
+            for (i, pair) in from.offsets.iter().enumerate() {
+                bytes.set(i as u32, pair.bytes.clone());
+            }
+        }
+        let mut jumps = offsets.reborrow().init_jumps(n);
+        for (i, pair) in from.offsets.iter().enumerate() {
+            jumps.set(i as u32, pair.jumps.clone());
+        }
+        let mut jumps = to.init_jumps(from.jumps.len().try_into()?);
+        for (i, value) in from.jumps.iter().enumerate() {
+            jumps.set(i as u32, value.clone());
         }
         Ok(())
     }

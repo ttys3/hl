@@ -18,6 +18,10 @@ error_chain! {
             description("file not found"),
             display("file '{}' not found", HILITE.paint(filename))
         }
+        InconsistentIndex(details: String) {
+            description("inconsistent index"),
+            display("inconsistent index: {}", details)
+        }
     }
 }
 
