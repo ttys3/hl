@@ -120,7 +120,7 @@ impl Indexer {
             // prepare receive/transmit channels for output data
             let (txo, rxo): (Vec<_>, Vec<_>) = (0..n)
                 .into_iter()
-                .map(|_| channel::bounded::<(usize, Stat)>(1))
+                .map(|_| channel::bounded::<(usize, Stat, Chronology)>(1))
                 .unzip();
             // spawn reader thread
             let reader = scope.spawn(closure!(clone sfi, |_| -> Result<()> {
@@ -138,19 +138,19 @@ impl Indexer {
             for (rxi, txo) in izip!(rxi, txo) {
                 scope.spawn(closure!(ref bfo, ref sfi, |_| {
                     for segment in rxi.iter() {
-                        let (stat, segment) = match segment {
+                        let ((stat, chronology), segment) = match segment {
                             ScannedSegment::Complete(segment) => {
                                 (self.process_segement(&segment), segment)
                             }
                             ScannedSegment::Incomplete(segment) => {
                                 let mut stat = Stat::new();
                                 stat.add_invalid();
-                                (stat, segment)
+                                ((stat, Chronology::default()), segment)
                             }
                         };
                         let size = segment.data().len();
                         sfi.recycle(segment);
-                        if let Err(_) = txo.send((size, stat)) {
+                        if let Err(_) = txo.send((size, stat, chronology)) {
                             break;
                         };
                     }
@@ -175,13 +175,13 @@ impl Indexer {
                 let mut offset: u64 = 0;
                 loop {
                     match rxo[sn % n].recv() {
-                        Ok((size, stat)) => {
+                        Ok((size, stat, chronology)) => {
                             index.source.stat.merge(&stat);
                             index.source.blocks.push(SourceBlock::new(
                                 offset,
                                 size.try_into()?,
                                 stat,
-                                Chronology::new(Vec::new(), Vec::new(), Vec::new()),
+                                chronology,
                             ));
                             offset += u64::try_from(size)?;
                         }
@@ -201,52 +201,87 @@ impl Indexer {
         .unwrap()
     }
 
-    fn process_segement(&self, segment: &Segment) -> Stat {
+    fn process_segement(&self, segment: &Segment) -> (Stat, Chronology) {
         let mut stat = Stat::new();
         let mut sorted = true;
         let mut prev_ts = None;
-        for data in segment.data().split(|c| *c == b'\n') {
+        let mut lines =
+            Vec::<(Option<(i64, u32)>, u32, u32)>::with_capacity(segment.data().len() / 512);
+        let mut offset = 0;
+        for (i, data) in segment.data().split(|c| *c == b'\n').enumerate() {
+            let data_len = data.len();
             let data = strip(data, b'\r');
-            if data.len() == 0 {
-                continue;
-            }
-            match json::from_slice::<Record>(data) {
-                Ok(rec) => {
-                    let mut flags = 0;
-                    match rec.level {
-                        Some(Level::Debug) => {
-                            flags |= schema::FLAG_LEVEL_DEBUG;
+            let mut ts = None;
+            if data.len() != 0 {
+                match json::from_slice::<Record>(data) {
+                    Ok(rec) => {
+                        let mut flags = 0;
+                        match rec.level {
+                            Some(Level::Debug) => {
+                                flags |= schema::FLAG_LEVEL_DEBUG;
+                            }
+                            Some(Level::Info) => {
+                                flags |= schema::FLAG_LEVEL_INFO;
+                            }
+                            Some(Level::Warning) => {
+                                flags |= schema::FLAG_LEVEL_WARNING;
+                            }
+                            Some(Level::Error) => {
+                                flags |= schema::FLAG_LEVEL_ERROR;
+                            }
+                            None => (),
                         }
-                        Some(Level::Info) => {
-                            flags |= schema::FLAG_LEVEL_INFO;
+                        ts = rec
+                            .ts()
+                            .and_then(|ts| ts.parse())
+                            .and_then(|ts| Some((ts.timestamp(), ts.timestamp_subsec_nanos())));
+                        if ts < prev_ts {
+                            sorted = false;
                         }
-                        Some(Level::Warning) => {
-                            flags |= schema::FLAG_LEVEL_WARNING;
-                        }
-                        Some(Level::Error) => {
-                            flags |= schema::FLAG_LEVEL_ERROR;
-                        }
-                        None => (),
+                        prev_ts = ts;
+                        stat.add_valid(ts, flags);
                     }
-                    let ts = rec
-                        .ts()
-                        .and_then(|ts| ts.parse())
-                        .and_then(|ts| Some((ts.timestamp(), ts.timestamp_subsec_nanos())));
-                    if ts < prev_ts {
-                        sorted = false;
+                    _ => {
+                        stat.add_invalid();
                     }
-                    prev_ts = ts;
-                    stat.add_valid(ts, flags);
-                }
-                _ => {
-                    stat.add_invalid();
                 }
             }
+            lines.push((ts.or(prev_ts), i as u32, offset));
+            offset += data_len as u32;
         }
-        if !sorted {
+        let chronology = if sorted {
+            Chronology::default()
+        } else {
             stat.flags |= schema::FLAG_UNSORTED;
-        }
-        stat
+            lines.sort();
+
+            let n = (lines.len() + 63) / 64;
+            let mut bitmap = Vec::with_capacity(n);
+            let mut offsets = Vec::with_capacity(n);
+            let mut jumps = Vec::new();
+            let mut prev = None;
+            for chunk in lines.chunks(64) {
+                let mut mask: u64 = 0;
+                for (i, line) in chunk.iter().enumerate() {
+                    if i == 0 {
+                        offsets.push(OffsetPair {
+                            bytes: line.2,
+                            jumps: jumps.len().try_into().unwrap(),
+                        });
+                    }
+                    if let Some(prev) = prev {
+                        if line.1 != prev + 1 {
+                            mask |= 1 << i;
+                            jumps.push(line.2);
+                        }
+                    }
+                    prev = Some(line.1);
+                }
+                bitmap.push(mask);
+            }
+            Chronology::new(bitmap, offsets, jumps)
+        };
+        (stat, chronology)
     }
 }
 
@@ -462,6 +497,12 @@ impl Chronology {
             offsets,
             jumps,
         }
+    }
+}
+
+impl Default for Chronology {
+    fn default() -> Self {
+        Self::new(Vec::new(), Vec::new(), Vec::new())
     }
 }
 
