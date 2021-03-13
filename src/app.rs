@@ -1,4 +1,5 @@
 // std imports
+use std::convert::TryInto;
 use std::io::{Read, Write};
 use std::sync::Arc;
 
@@ -27,7 +28,7 @@ pub struct Options {
     pub theme: Arc<Theme>,
     pub time_format: DateTimeFormat,
     pub raw_fields: bool,
-    pub buffer_size: usize,
+    pub buffer_size: u32,
     pub concurrency: usize,
     pub filter: Filter,
     pub fields: Arc<IncludeExcludeKeyFilter>,
@@ -61,8 +62,8 @@ impl App {
 
         let mut input = ConcatReader::new(inputs.into_iter().map(|x| Ok(x)));
         let n = self.options.concurrency;
-        let sfi = Arc::new(SegmentFactory::new(self.options.buffer_size));
-        let bfo = BufFactory::new(self.options.buffer_size);
+        let sfi = Arc::new(SegmentFactory::new(self.options.buffer_size.try_into()?));
+        let bfo = BufFactory::new(self.options.buffer_size.try_into()?);
         thread::scope(|scope| -> Result<()> {
             // prepare receive/transmit channels for input data
             let (txi, rxi): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded(1)).unzip();

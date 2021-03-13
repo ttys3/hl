@@ -21,7 +21,7 @@ struct SourceFile {
 # Block is an information about a part of source log file.
 struct SourceBlock {
     offset @0 :UInt64;
-    size @1 :UInt64;
+    size @1 :UInt32;
     index @2 :Index;
 }
 

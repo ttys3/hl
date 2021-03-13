@@ -11,6 +11,7 @@
 
 // std imports
 use std::cmp::{max, min};
+use std::convert::{TryFrom, TryInto};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -46,13 +47,13 @@ pub type Reader = dyn Read + Send + Sync;
 /// Allows log files indexing to enable message sorting.
 pub struct Indexer {
     concurrency: usize,
-    buffer_size: usize,
+    buffer_size: u32,
     dir: PathBuf,
 }
 
 impl Indexer {
     /// Returns a new Indexer with the given parameters.
-    pub fn new(concurrency: usize, buffer_size: usize, dir: PathBuf) -> Self {
+    pub fn new(concurrency: usize, buffer_size: u32, dir: PathBuf) -> Self {
         Self {
             concurrency,
             buffer_size,
@@ -111,15 +112,15 @@ impl Indexer {
         output: &mut Writer,
     ) -> Result<Index> {
         let n = self.concurrency;
-        let sfi = Arc::new(SegmentFactory::new(self.buffer_size));
-        let bfo = BufFactory::new(self.buffer_size);
+        let sfi = Arc::new(SegmentFactory::new(self.buffer_size.try_into()?));
+        let bfo = BufFactory::new(self.buffer_size.try_into()?);
         thread::scope(|scope| -> Result<Index> {
             // prepare receive/transmit channels for input data
             let (txi, rxi): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded(1)).unzip();
             // prepare receive/transmit channels for output data
             let (txo, rxo): (Vec<_>, Vec<_>) = (0..n)
                 .into_iter()
-                .map(|_| channel::bounded::<Stat>(1))
+                .map(|_| channel::bounded::<(usize, Stat)>(1))
                 .unzip();
             // spawn reader thread
             let reader = scope.spawn(closure!(clone sfi, |_| -> Result<()> {
@@ -142,13 +143,14 @@ impl Indexer {
                                 (self.process_segement(&segment), segment)
                             }
                             ScannedSegment::Incomplete(segment) => {
-                                let mut stat = Stat::new(segment.data().len() as u64);
+                                let mut stat = Stat::new();
                                 stat.add_invalid();
                                 (stat, segment)
                             }
                         };
+                        let size = segment.data().len();
                         sfi.recycle(segment);
-                        if let Err(_) = txo.send(stat) {
+                        if let Err(_) = txo.send((size, stat)) {
                             break;
                         };
                     }
@@ -156,26 +158,31 @@ impl Indexer {
             }
             // spawn writer thread
             let writer = scope.spawn(closure!(ref bfo, |_| -> Result<Index> {
-                let bs = self.buffer_size as u64;
+                let bs = usize::try_from(self.buffer_size)?;
                 let mut index = Index {
                     source: SourceFile {
                         size: metadata.len(),
                         path: path.to_string_lossy().into(),
                         modified: ts(metadata.modified()?),
-                        stat: Stat::new(metadata.len()),
-                        blocks: Vec::with_capacity(((metadata.len() + bs - 1) / bs) as usize),
+                        stat: Stat::new(),
+                        blocks: Vec::with_capacity(
+                            (usize::try_from(metadata.len())? + bs - 1) / bs,
+                        ),
                     },
                 };
 
                 let mut sn = 0;
-                let mut offset = 0;
+                let mut offset: u64 = 0;
                 loop {
                     match rxo[sn % n].recv() {
-                        Ok(stat) => {
-                            let size = stat.size;
+                        Ok((size, stat)) => {
                             index.source.stat.merge(&stat);
-                            index.source.blocks.push(SourceBlock::new(offset, stat));
-                            offset += size;
+                            index.source.blocks.push(SourceBlock::new(
+                                offset,
+                                size.try_into()?,
+                                stat,
+                            ));
+                            offset += u64::try_from(size)?;
                         }
                         Err(RecvError) => {
                             break;
@@ -194,7 +201,7 @@ impl Indexer {
     }
 
     fn process_segement(&self, segment: &Segment) -> Stat {
-        let mut stat = Stat::new(segment.data().len() as u64);
+        let mut stat = Stat::new();
         let mut sorted = true;
         let mut prev_ts = None;
         for data in segment.data().split(|c| *c == b'\n') {
@@ -245,6 +252,7 @@ impl Indexer {
 // ---
 
 // Contains index information for a single source file.
+#[derive(Debug)]
 pub struct Index {
     source: SourceFile,
 }
@@ -267,7 +275,7 @@ impl Index {
                 size: source.get_size(),
                 path: source.get_path()?.into(),
                 modified: (modified.get_sec(), modified.get_nsec()),
-                stat: Self::load_stat(source.get_size(), source.get_index()?),
+                stat: Self::load_stat(source.get_index()?),
                 blocks: Self::load_blocks(source)?,
             },
         })
@@ -287,11 +295,11 @@ impl Index {
         modified.set_nsec(self.source.modified.1);
         let mut index = source.reborrow().init_index();
         Self::save_stat(index.reborrow(), &self.source.stat);
-        let mut blocks = source.init_blocks(self.source.blocks.len() as u32);
+        let mut blocks = source.init_blocks(self.source.blocks.len().try_into()?);
         for (i, source_block) in self.source.blocks.iter().enumerate() {
-            let mut block = blocks.reborrow().get(i as u32);
+            let mut block = blocks.reborrow().get(i.try_into()?);
             block.set_offset(source_block.offset);
-            block.set_size(source_block.stat.size);
+            block.set_size(source_block.size);
             let mut index = block.init_index();
             Self::save_stat(index.reborrow(), &source_block.stat);
         }
@@ -299,12 +307,11 @@ impl Index {
         Ok(())
     }
 
-    fn load_stat(size: u64, index: schema::index::Reader) -> Stat {
+    fn load_stat(index: schema::index::Reader) -> Stat {
         let lines = index.get_lines();
         let ts = index.get_timestamps();
         let flags = index.get_flags();
         Stat {
-            size,
             flags: flags,
             lines_valid: lines.get_valid(),
             lines_invalid: lines.get_invalid(),
@@ -325,7 +332,8 @@ impl Index {
         for block in blocks.iter() {
             result.push(SourceBlock {
                 offset: block.get_offset(),
-                stat: Self::load_stat(block.get_size(), block.get_index()?),
+                size: block.get_size(),
+                stat: Self::load_stat(block.get_index()?),
             })
         }
         Ok(result)
@@ -351,6 +359,7 @@ impl Index {
 // ---
 
 /// SourceFile contains index data of scanned source log file.
+#[derive(Debug)]
 pub struct SourceFile {
     pub size: u64,
     pub path: String,
@@ -362,23 +371,25 @@ pub struct SourceFile {
 // ---
 
 /// SourceBlock contains index data of a block in a scanned source log file.
+#[derive(Debug)]
 pub struct SourceBlock {
     pub offset: u64,
+    pub size: u32,
     pub stat: Stat,
 }
 
 impl SourceBlock {
     /// Returns a new SourceBlock.
-    pub fn new(offset: u64, stat: Stat) -> Self {
-        Self { offset, stat }
+    pub fn new(offset: u64, size: u32, stat: Stat) -> Self {
+        Self { offset, size, stat }
     }
 }
 
 // ---
 
 /// Stat contains statistical information over a file or over a block.
+#[derive(Debug)]
 pub struct Stat {
-    pub size: u64,
     pub flags: u64,
     pub lines_valid: u64,
     pub lines_invalid: u64,
@@ -387,9 +398,8 @@ pub struct Stat {
 
 impl Stat {
     /// New returns a new Stat.
-    pub fn new(size: u64) -> Self {
+    pub fn new() -> Self {
         Self {
-            size,
             flags: 0,
             lines_valid: 0,
             lines_invalid: 0,
@@ -501,4 +511,4 @@ fn strip<'a>(slice: &'a [u8], ch: u8) -> &'a [u8] {
 }
 
 const VALID_MAGIC: u64 = 0x5845444e492d4c48;
-const CURRENT_VERSION: u64 = 2;
+const CURRENT_VERSION: u64 = 1;

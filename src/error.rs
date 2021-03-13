@@ -9,6 +9,8 @@ error_chain! {
         Capnp(::capnp::Error);
         Bincode(::bincode::Error);
         Boxed(::std::boxed::Box<dyn std::error::Error + std::marker::Send>);
+        Value(::std::num::TryFromIntError);
+        Infallible(::std::convert::Infallible);
     }
 
     errors {

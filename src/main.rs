@@ -61,7 +61,7 @@ struct Opt {
     //
     /// Buffer size, kibibytes.
     #[structopt(long, default_value = "2048", overrides_with = "buffer-size")]
-    buffer_size: usize,
+    buffer_size: u32,
     //
     /// Number of processing threads.
     #[structopt(long, short = "C", overrides_with = "concurrency")]
@@ -288,22 +288,25 @@ fn run() -> Result<()> {
         let ixer = Indexer::new(concurrency, buffer_size, cache_dir);
         for file in files {
             let ix = ixer.index(file)?;
-            let source = ix.source();
-            println!("size:               {}", source.size);
-            println!("path:               {}", source.path);
-            println!("modified:           {:?}", source.modified);
-            println!("stat.size:          {}", source.stat.size);
-            println!("stat.flags:         0x{:x}", source.stat.flags);
-            println!("stat.lines_valid:   {}", source.stat.lines_valid);
-            println!("stat.lines_invalid: {}", source.stat.lines_invalid);
-            println!("stat.ts_min_max:    {:?}", source.stat.ts_min_max);
-            println!("blocks:             {}", source.blocks.len());
-            for (i, block) in source.blocks.iter().enumerate() {
-                println!("block {} offset:       {:?}", i, block.offset);
-                println!("block {} size:         {:?}", i, block.stat.size);
-                println!("block {} flags:        0x{:x}", i, block.stat.flags);
-                println!("block {} ts_min_max:   {:?}", i, block.stat.ts_min_max);
-            }
+            println!("size:               {:#?}", ix);
+            // let source = ix.source();
+            // println!("size:               {}", source.size);
+            // println!("path:               {}", source.path);
+            // println!("modified:           {:?}", source.modified);
+            // println!("stat.size:          {}", source.stat.size);
+            // println!("stat.flags:         0x{:x}", source.stat.flags);
+            // println!("stat.lines_valid:   {}", source.stat.lines_valid);
+            // println!("stat.lines_invalid: {}", source.stat.lines_invalid);
+            // println!("stat.ts_min_max:    {:?}", source.stat.ts_min_max);
+            // println!("blocks:             {}", source.blocks.len());
+            // for (i, block) in source.blocks.iter().enumerate() {
+            //     println!("block {} offset:        {:?}", i, block.offset);
+            //     println!("block {} size:          {:?}", i, block.stat.size);
+            //     println!("block {} flags:         0x{:x}", i, block.stat.flags);
+            //     println!("block {} ts_min_max:    {:?}", i, block.stat.ts_min_max);
+            //     println!("block {} lines_valid:   {}", i, block.stat.lines_valid);
+            //     println!("block {} lines_invalid: {}", i, block.stat.lines_invalid);
+            // }
         }
         // let mut f = ix.file("test", 42, SystemTime::UNIX_EPOCH);
         // let mut f = ib.file("tesa", 43, SystemTime::UNIX_EPOCH);
