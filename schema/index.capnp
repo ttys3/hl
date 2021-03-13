@@ -33,23 +33,23 @@ struct Index {
         invalid @2 :UInt64;
     }
     timestamps :group {
-        present @3 :Bool;
         min :group {
-            sec @4 :Int64;
-            nsec @5 :UInt32;
+            sec @3 :Int64;
+            nsec @4 :UInt32;
         }
         max :group {
-            sec @6 :Int64;
-            nsec @7 :UInt32;
+            sec @5 :Int64;
+            nsec @6 :UInt32;
         }
     }
 }
 
 # Various flags.
-const flagLevelMask :UInt64    = 0x00000000000000FF;
-const flagLevelDebug :UInt64   = 0x0000000000000001;
-const flagLevelInfo :UInt64    = 0x0000000000000002;
-const flagLevelWarning :UInt64 = 0x0000000000000004;
-const flagLevelError :UInt64   = 0x0000000000000008;
-const flagUnsorted :UInt64     = 0x0000000000000100;
-const flagBinary :UInt64       = 0x8000000000000000;
+const flagLevelDebug :UInt64    = 0x0000000000000001;
+const flagLevelInfo :UInt64     = 0x0000000000000002;
+const flagLevelWarning :UInt64  = 0x0000000000000004;
+const flagLevelError :UInt64    = 0x0000000000000008;
+const flagLevelMask :UInt64     = 0x00000000000000FF;
+const flagUnsorted :UInt64      = 0x0000000000000100;
+const flagHasTimestamps :UInt64 = 0x0000000000000200;
+const flagBinary :UInt64        = 0x8000000000000000;

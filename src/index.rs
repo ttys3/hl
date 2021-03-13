@@ -220,17 +220,15 @@ impl Indexer {
                         }
                         None => (),
                     }
-                    let ts = rec.ts().and_then(|ts| ts.parse());
-                    if let Some(ts) = ts {
-                        let ts = (ts.timestamp(), ts.timestamp_subsec_nanos());
-                        if Some(ts) < prev_ts {
-                            sorted = false;
-                        }
-                        prev_ts = Some(ts);
-                        stat.add_valid(ts, flags);
-                    } else {
-                        stat.add_invalid();
+                    let ts = rec
+                        .ts()
+                        .and_then(|ts| ts.parse())
+                        .and_then(|ts| Some((ts.timestamp(), ts.timestamp_subsec_nanos())));
+                    if ts < prev_ts {
+                        sorted = false;
                     }
+                    prev_ts = ts;
+                    stat.add_valid(ts, flags);
                 }
                 _ => {
                     stat.add_invalid();
@@ -304,12 +302,13 @@ impl Index {
     fn load_stat(size: u64, index: schema::index::Reader) -> Stat {
         let lines = index.get_lines();
         let ts = index.get_timestamps();
+        let flags = index.get_flags();
         Stat {
             size,
-            flags: index.get_flags(),
+            flags: flags,
             lines_valid: lines.get_valid(),
             lines_invalid: lines.get_invalid(),
-            ts_min_max: if ts.get_present() {
+            ts_min_max: if flags & schema::FLAG_HAS_TIMESTAMPS != 0 {
                 Some((
                     (ts.get_min().get_sec(), ts.get_min().get_nsec()),
                     (ts.get_max().get_sec(), ts.get_max().get_nsec()),
@@ -339,7 +338,6 @@ impl Index {
         lines.set_invalid(stat.lines_invalid);
         if let Some((min, max)) = stat.ts_min_max {
             let mut timestamps = index.init_timestamps();
-            timestamps.set_present(true);
             let mut ts_min = timestamps.reborrow().init_min();
             ts_min.set_sec(min.0);
             ts_min.set_nsec(min.1);
@@ -400,10 +398,13 @@ impl Stat {
     }
 
     /// Adds information about a single valid line.
-    pub fn add_valid(&mut self, ts: (i64, u32), flags: u64) {
-        self.ts_min_max = min_max_opt(self.ts_min_max, Some((ts, ts)));
+    pub fn add_valid(&mut self, ts: Option<(i64, u32)>, flags: u64) {
+        self.ts_min_max = min_max_opt(self.ts_min_max, ts.and_then(|ts| Some((ts, ts))));
         self.flags |= flags;
         self.lines_valid += 1;
+        if self.ts_min_max.is_some() {
+            self.flags |= schema::FLAG_HAS_TIMESTAMPS;
+        }
     }
 
     /// Counts a single invalid line.
@@ -500,4 +501,4 @@ fn strip<'a>(slice: &'a [u8], ch: u8) -> &'a [u8] {
 }
 
 const VALID_MAGIC: u64 = 0x5845444e492d4c48;
-const CURRENT_VERSION: u64 = 1;
+const CURRENT_VERSION: u64 = 2;
