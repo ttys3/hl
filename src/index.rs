@@ -247,7 +247,7 @@ impl Indexer {
                 }
             }
             lines.push((ts.or(prev_ts), i as u32, offset));
-            offset += data_len as u32;
+            offset += data_len as u32 + 1;
         }
         let chronology = if sorted {
             Chronology::default()
@@ -416,7 +416,7 @@ impl Index {
             let jumps = offsets.get_jumps()?;
             if bytes.len() != jumps.len() {
                 return Err(ErrorKind::InconsistentIndex(
-                    "offsets bytes and jumps length differ".into(),
+                    "chronology offsets length mismatch".into(),
                 )
                 .into());
             }
