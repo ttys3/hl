@@ -12,6 +12,7 @@
 // std imports
 use std::cmp::{max, min};
 use std::convert::{TryFrom, TryInto};
+use std::fmt;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -553,7 +554,6 @@ impl Stat {
 // ---
 
 /// Chronology contains information about ordering of log messages by timestamp in a SourceBlock.
-#[derive(Debug)]
 pub struct Chronology {
     pub bitmap: Vec<u64>,
     pub offsets: Vec<OffsetPair>,
@@ -567,6 +567,16 @@ impl Default for Chronology {
             offsets: Vec::new(),
             jumps: Vec::new(),
         }
+    }
+}
+
+impl fmt::Debug for Chronology {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Chronology")
+            .field("bitmap", &AsHex(&self.bitmap))
+            .field("offsets", &self.offsets)
+            .field("jumps", &self.jumps)
+            .finish()
     }
 }
 
@@ -617,6 +627,16 @@ impl Header {
 
     fn save(&self, writer: &mut Writer) -> Result<()> {
         Ok(bincode::serialize_into(writer, &self)?)
+    }
+}
+
+// ---
+
+struct AsHex<T>(T);
+
+impl<T: fmt::Debug> fmt::Debug for AsHex<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:#x?}", &self.0)
     }
 }
 
