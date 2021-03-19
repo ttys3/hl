@@ -1,13 +1,20 @@
+// std imports
 use std::fs::File;
-use std::io::{BufReader, Error, Read, Result};
+use std::io::{stdin, BufReader, Error, Read, Result, Seek};
 use std::path::PathBuf;
 
+// third-party imports
 use ansi_term::Colour;
 use flate2::bufread::GzDecoder;
+
+// local imports
+use crate::index::{Index, Indexer};
 
 // ---
 
 pub type InputStream = Box<dyn Read + Send + Sync>;
+
+pub type InputSeekStream = Box<dyn ReadSeek + Send + Sync>;
 
 // ---
 
@@ -18,9 +25,22 @@ pub enum InputReference {
 
 impl Into<Result<Input>> for InputReference {
     fn into(self) -> Result<Input> {
+        self.open()
+    }
+}
+
+impl InputReference {
+    pub fn open(&self) -> Result<Input> {
         match self {
-            InputReference::Stdin => Ok(Input::new("<stdin>".into(), Box::new(std::io::stdin()))),
+            InputReference::Stdin => Ok(Input::new("<stdin>".into(), Box::new(stdin()))),
             InputReference::File(filename) => Input::open(&filename),
+        }
+    }
+
+    pub fn index(&self, indexer: &Indexer) -> crate::error::Result<IndexedInput> {
+        match self {
+            InputReference::Stdin => panic!("indexing stdin is not implemented yet"),
+            InputReference::File(filename) => IndexedInput::open(&filename, indexer),
         }
     }
 }
@@ -31,8 +51,6 @@ pub struct Input {
     pub name: String,
     pub stream: InputStream,
 }
-
-// ---
 
 impl Input {
     pub fn new(name: String, stream: InputStream) -> Self {
@@ -48,6 +66,37 @@ impl Input {
             _ => Box::new(f),
         };
         Ok(Self::new(name, stream))
+    }
+}
+
+// ---
+
+pub struct IndexedInput {
+    pub name: String,
+    pub stream: InputSeekStream,
+    pub index: Index,
+}
+
+impl IndexedInput {
+    pub fn new(name: String, stream: InputSeekStream, index: Index) -> Self {
+        Self {
+            name,
+            stream,
+            index,
+        }
+    }
+
+    pub fn open(path: &PathBuf, indexer: &Indexer) -> crate::error::Result<Self> {
+        let name = format!("file '{}'", Colour::Yellow.paint(path.to_string_lossy()));
+        let f = File::open(path)
+            .map_err(|e| Error::new(e.kind(), format!("failed to open {}: {}", name, e)))?;
+        let stream: InputSeekStream = match path.extension().map(|x| x.to_str()) {
+            Some(Some("gz")) => panic!("sorting messages from gz files is not yet implemented"),
+            _ => Box::new(f),
+        };
+        let index = indexer.index(path)?;
+
+        Ok(Self::new(name, stream, index))
     }
 }
 
@@ -92,3 +141,9 @@ where
         }
     }
 }
+
+// ---
+
+pub trait ReadSeek: Read + Seek {}
+
+impl<T: Read + Seek> ReadSeek for T {}

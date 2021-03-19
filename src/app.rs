@@ -1,6 +1,8 @@
 // std imports
 use std::convert::TryInto;
+use std::fs;
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 // third-party imports
@@ -16,6 +18,7 @@ use serde_json as json;
 use crate::datefmt::{DateTimeFormat, DateTimeFormatter};
 use crate::error::*;
 use crate::formatting::RecordFormatter;
+use crate::index::Indexer;
 use crate::input::{ConcatReader, InputReference};
 use crate::model::{Filter, Record};
 use crate::scanning::{BufFactory, ScannedSegment, Scanner, Segment, SegmentFactory};
@@ -52,7 +55,7 @@ impl App {
         output: &mut (dyn Write + Send + Sync),
     ) -> Result<()> {
         if self.options.sort {
-            panic!("not implemented")
+            self.sort(inputs, output)
         } else {
             self.cat(inputs, output)
         }
@@ -177,6 +180,110 @@ impl App {
                 buf.push(b'\n');
             }
         }
+    }
+
+    fn sort(
+        &self,
+        inputs: Vec<InputReference>,
+        output: &mut (dyn Write + Send + Sync),
+    ) -> Result<()> {
+        let cache_dir = directories::BaseDirs::new()
+            .and_then(|d| Some(d.cache_dir().into()))
+            .unwrap_or(PathBuf::from(".cache"))
+            .join("github.com/pamburus/hl");
+        fs::create_dir_all(&cache_dir)?;
+        let indexer = Indexer::new(
+            self.options.concurrency,
+            self.options.buffer_size,
+            cache_dir,
+        );
+
+        let inputs = inputs
+            .into_iter()
+            .map(|x| x.index(&indexer))
+            .collect::<Result<Vec<_>>>()?;
+
+        let mut input = ConcatReader::new(inputs.into_iter().map(|x| Ok(x)));
+        let n = self.options.concurrency;
+        let sfi = Arc::new(SegmentFactory::new(self.options.buffer_size.try_into()?));
+        let bfo = BufFactory::new(self.options.buffer_size.try_into()?);
+        thread::scope(|scope| -> Result<()> {
+            // prepare receive/transmit channels for input data
+            let (txi, rxi): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded(1)).unzip();
+            // prepare receive/transmit channels for output data
+            let (txo, rxo): (Vec<_>, Vec<_>) = (0..n)
+                .into_iter()
+                .map(|_| channel::bounded::<Vec<u8>>(1))
+                .unzip();
+            // spawn reader thread
+            let reader = scope.spawn(closure!(clone sfi, |_| -> Result<()> {
+                let mut sn: usize = 0;
+                let scanner = Scanner::new(sfi, "\n".to_string());
+                for item in scanner.items(&mut input) {
+                    if let Err(_) = txi[sn % n].send(item?) {
+                        break;
+                    }
+                    sn += 1;
+                }
+                Ok(())
+            }));
+            // spawn processing threads
+            for (rxi, txo) in izip!(rxi, txo) {
+                scope.spawn(closure!(ref bfo, ref sfi, |_| {
+                    let mut formatter = RecordFormatter::new(
+                        self.options.theme.clone(),
+                        DateTimeFormatter::new(
+                            self.options.time_format.clone(),
+                            self.options.time_zone,
+                        ),
+                        self.options.hide_empty_fields,
+                        self.options.fields.clone(),
+                    )
+                    .with_field_unescaping(!self.options.raw_fields);
+                    for segment in rxi.iter() {
+                        match segment {
+                            ScannedSegment::Complete(segment) => {
+                                let mut buf = bfo.new_buf();
+                                self.process_segement(&segment, &mut formatter, &mut buf);
+                                sfi.recycle(segment);
+                                if let Err(_) = txo.send(buf) {
+                                    break;
+                                };
+                            }
+                            ScannedSegment::Incomplete(segment) => {
+                                if let Err(_) = txo.send(segment.to_vec()) {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }));
+            }
+            // spawn writer thread
+            let writer = scope.spawn(closure!(ref bfo, |_| -> Result<()> {
+                let mut sn = 0;
+                loop {
+                    match rxo[sn % n].recv() {
+                        Ok(buf) => {
+                            output.write_all(&buf[..])?;
+                            bfo.recycle(buf);
+                        }
+                        Err(RecvError) => {
+                            break;
+                        }
+                    }
+                    sn += 1;
+                }
+                Ok(())
+            }));
+            // collect errors from reader and writer threads
+            reader.join().unwrap()?;
+            writer.join().unwrap()?;
+            Ok(())
+        })
+        .unwrap()?;
+
+        return Ok(());
     }
 }
 

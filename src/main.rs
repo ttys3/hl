@@ -281,20 +281,6 @@ fn run() -> Result<()> {
         Err(err) => Err(err),
     };
 
-    // let files = opt.files.clone();
-    // let run_indexer = || {
-    //     let cache_dir = directories::BaseDirs::new()
-    //         .and_then(|d| Some(d.cache_dir().into()))
-    //         .unwrap_or(PathBuf::from(".cache"))
-    //         .join("github.com/pamburus/hl");
-    //     fs::create_dir_all(&cache_dir)?;
-    //     let ixer = Indexer::new(concurrency, buffer_size, cache_dir);
-    //     for file in files {
-    //         let ix = ixer.index(file)?;
-    //         println!("{:#?}", ix);
-    //     Ok(())
-    // };
-
     // Run the app with signal handling.
     SignalHandler::run(opt.interrupt_ignore_count, Duration::from_secs(1), run)
 }

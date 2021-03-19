@@ -65,7 +65,7 @@ impl Indexer {
     /// Builds index for the given file.
     ///
     /// Builds the index, saves it to disk and returns it.
-    pub fn index(&self, source_path: PathBuf) -> Result<Index> {
+    pub fn index(&self, source_path: &PathBuf) -> Result<Index> {
         let hash = hex::encode(sha256(source_path.to_string_lossy().as_bytes()));
         let index_path = self.dir.join(PathBuf::from(hash));
         if Path::new(&index_path).exists() {
