@@ -1,6 +1,6 @@
 // std imports
 use std::convert::TryInto;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::sync::Arc;
 
 // third-party imports
@@ -16,7 +16,7 @@ use serde_json as json;
 use crate::datefmt::{DateTimeFormat, DateTimeFormatter};
 use crate::error::*;
 use crate::formatting::RecordFormatter;
-use crate::input::{ConcatReader, Input, InputReference};
+use crate::input::{ConcatReader, InputReference};
 use crate::model::{Filter, Record};
 use crate::scanning::{BufFactory, ScannedSegment, Scanner, Segment, SegmentFactory};
 use crate::theme::Theme;
@@ -34,6 +34,7 @@ pub struct Options {
     pub fields: Arc<IncludeExcludeKeyFilter>,
     pub time_zone: FixedOffset,
     pub hide_empty_fields: bool,
+    pub sort: bool,
 }
 
 pub struct App {
@@ -50,14 +51,21 @@ impl App {
         inputs: Vec<InputReference>,
         output: &mut (dyn Write + Send + Sync),
     ) -> Result<()> {
+        if self.options.sort {
+            panic!("not implemented")
+        } else {
+            self.cat(inputs, output)
+        }
+    }
+
+    fn cat(
+        &self,
+        inputs: Vec<InputReference>,
+        output: &mut (dyn Write + Send + Sync),
+    ) -> Result<()> {
         let inputs = inputs
-            .iter()
-            .map(|x| match x {
-                InputReference::Stdin => {
-                    Ok(Input::new("<stdin>".into(), Box::new(std::io::stdin())))
-                }
-                InputReference::File(filename) => Input::open(&filename),
-            })
+            .into_iter()
+            .map(|x| x.into())
             .collect::<std::io::Result<Vec<_>>>()?;
 
         let mut input = ConcatReader::new(inputs.into_iter().map(|x| Ok(x)));

@@ -1,14 +1,12 @@
 // std imports
 use std::env;
-use std::fs;
 use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 // third-party imports
 use ansi_term::Colour;
-use capnp::serialize::write_message;
 use chrono::{FixedOffset, Local, TimeZone};
 use chrono_tz::{Tz, UTC};
 use error_chain::ChainedError;
@@ -18,8 +16,8 @@ use structopt::StructOpt;
 // local imports
 use hl::datefmt::LinuxDateFormat;
 use hl::error::*;
-use hl::index::Indexer;
-use hl::input::{ConcatReader, Input, InputReference, InputStream};
+// use hl::index::Indexer;
+use hl::input::InputReference;
 use hl::output::{OutputStream, Pager};
 use hl::signal::SignalHandler;
 use hl::{IncludeExcludeKeyFilter, KeyMatchOptions};
@@ -111,6 +109,10 @@ struct Opt {
     /// Show empty fields, overrides --hide-empty-fields option.
     #[structopt(long, short = "E")]
     show_empty_fields: bool,
+
+    /// Sort messages chronologically.
+    #[structopt(long, short = "s")]
+    sort: bool,
 }
 
 arg_enum! {
@@ -232,6 +234,7 @@ fn run() -> Result<()> {
             FixedOffset::east(offset.num_seconds() as i32)
         },
         hide_empty_fields,
+        sort: opt.sort,
     });
 
     // Configure input.
@@ -278,48 +281,22 @@ fn run() -> Result<()> {
         Err(err) => Err(err),
     };
 
-    let files = opt.files.clone();
-    let run_indexer = || {
-        let cache_dir = directories::BaseDirs::new()
-            .and_then(|d| Some(d.cache_dir().into()))
-            .unwrap_or(PathBuf::from(".cache"))
-            .join("github.com/pamburus/hl");
-        fs::create_dir_all(&cache_dir)?;
-        let ixer = Indexer::new(concurrency, buffer_size, cache_dir);
-        for file in files {
-            let ix = ixer.index(file)?;
-            println!("size:               {:#?}", ix);
-            // let source = ix.source();
-            // println!("size:               {}", source.size);
-            // println!("path:               {}", source.path);
-            // println!("modified:           {:?}", source.modified);
-            // println!("stat.size:          {}", source.stat.size);
-            // println!("stat.flags:         0x{:x}", source.stat.flags);
-            // println!("stat.lines_valid:   {}", source.stat.lines_valid);
-            // println!("stat.lines_invalid: {}", source.stat.lines_invalid);
-            // println!("stat.ts_min_max:    {:?}", source.stat.ts_min_max);
-            // println!("blocks:             {}", source.blocks.len());
-            // for (i, block) in source.blocks.iter().enumerate() {
-            //     println!("block {} offset:        {:?}", i, block.offset);
-            //     println!("block {} size:          {:?}", i, block.stat.size);
-            //     println!("block {} flags:         0x{:x}", i, block.stat.flags);
-            //     println!("block {} ts_min_max:    {:?}", i, block.stat.ts_min_max);
-            //     println!("block {} lines_valid:   {}", i, block.stat.lines_valid);
-            //     println!("block {} lines_invalid: {}", i, block.stat.lines_invalid);
-            // }
-        }
-        // let mut f = ix.file("test", 42, SystemTime::UNIX_EPOCH);
-        // let mut f = ib.file("tesa", 43, SystemTime::UNIX_EPOCH);
-        // write_message(std::io::stdout(), ib.message());
-        Ok(())
-    };
+    // let files = opt.files.clone();
+    // let run_indexer = || {
+    //     let cache_dir = directories::BaseDirs::new()
+    //         .and_then(|d| Some(d.cache_dir().into()))
+    //         .unwrap_or(PathBuf::from(".cache"))
+    //         .join("github.com/pamburus/hl");
+    //     fs::create_dir_all(&cache_dir)?;
+    //     let ixer = Indexer::new(concurrency, buffer_size, cache_dir);
+    //     for file in files {
+    //         let ix = ixer.index(file)?;
+    //         println!("{:#?}", ix);
+    //     Ok(())
+    // };
 
     // Run the app with signal handling.
-    SignalHandler::run(
-        opt.interrupt_ignore_count,
-        Duration::from_secs(1),
-        run_indexer,
-    )
+    SignalHandler::run(opt.interrupt_ignore_count, Duration::from_secs(1), run)
 }
 
 fn main() {

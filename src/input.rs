@@ -5,22 +5,34 @@ use std::path::PathBuf;
 use ansi_term::Colour;
 use flate2::bufread::GzDecoder;
 
+// ---
+
+pub type InputStream = Box<dyn Read + Send + Sync>;
+
+// ---
+
 pub enum InputReference {
     Stdin,
     File(PathBuf),
 }
 
-pub type InputStream = Box<dyn Read + Send + Sync>;
+impl Into<Result<Input>> for InputReference {
+    fn into(self) -> Result<Input> {
+        match self {
+            InputReference::Stdin => Ok(Input::new("<stdin>".into(), Box::new(std::io::stdin()))),
+            InputReference::File(filename) => Input::open(&filename),
+        }
+    }
+}
+
+// ---
 
 pub struct Input {
     pub name: String,
     pub stream: InputStream,
 }
 
-pub struct ConcatReader<I> {
-    iter: I,
-    item: Option<Input>,
-}
+// ---
 
 impl Input {
     pub fn new(name: String, stream: InputStream) -> Self {
@@ -37,6 +49,13 @@ impl Input {
         };
         Ok(Self::new(name, stream))
     }
+}
+
+// ---
+
+pub struct ConcatReader<I> {
+    iter: I,
+    item: Option<Input>,
 }
 
 impl<I> ConcatReader<I> {
