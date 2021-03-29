@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use crate::error::{Error, Result};
 
-#[derive(Ord, PartialOrd, PartialEq, Eq, Debug, Hash, Clone)]
+#[derive(Ord, PartialOrd, PartialEq, Eq, Debug, Hash, Clone, Copy)]
 pub enum Level {
     Error,
     Warning,

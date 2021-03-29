@@ -11,7 +11,7 @@ use closure::closure;
 use crossbeam_channel as channel;
 use crossbeam_channel::RecvError;
 use crossbeam_utils::thread;
-use itertools::izip;
+use itertools::{izip, Itertools};
 use serde_json as json;
 
 // local imports
@@ -205,6 +205,29 @@ impl App {
             .map(|x| x.index(&indexer))
             .collect::<Result<Vec<_>>>()?;
 
+        let mut blocks: Vec<_> = inputs
+            .iter()
+            .enumerate()
+            .map(|(i, input)| input.index.source().blocks.iter().map(|block| (block, i)))
+            .flatten()
+            .filter_map(|(block, i)| {
+                if block.stat.lines_valid == 0 {
+                    return None;
+                }
+                if let Some(level) = self.options.filter.level {
+                    if !block.match_level(level) {
+                        return None;
+                    }
+                }
+                block
+                    .stat
+                    .ts_min_max
+                    .map(|(ts_min, ts_max)| (block, ts_min, ts_max, i))
+            })
+            .collect();
+
+        blocks.sort_by(|a, b| (a.1, a.2, a.3).partial_cmp(&(b.1, b.2, b.3)).unwrap());
+
         for input in inputs {
             writeln!(output, "{:#?}", input.index);
         }
@@ -214,22 +237,25 @@ impl App {
         let sfi = Arc::new(SegmentBufFactory::new(self.options.buffer_size.try_into()?));
         let bfo = BufFactory::new(self.options.buffer_size.try_into()?);
         thread::scope(|scope| -> Result<()> {
-            // prepare receive/transmit channels for input data
-            let (txi, rxi): (Vec<_>, Vec<_>) = (0..m).map(|_| channel::bounded(1)).unzip();
-            // prepare receive/transmit channels for output data
-            let (txo, rxo): (Vec<_>, Vec<_>) = (0..n)
+            // prepare receive/transmit channels for sorter stage
+            let (stx, srx): (Vec<_>, Vec<_>) = (0..m).map(|_| channel::bounded(1)).unzip();
+            // prepare receive/transmit channels for parser stage
+            let (ptx, prx): (Vec<_>, Vec<_>) = (0..m).map(|_| channel::bounded(1)).unzip();
+            // prepare receive/transmit channels for formatter stage
+            let (ftx, frx): (Vec<_>, Vec<_>) = (0..n)
                 .into_iter()
                 .map(|_| channel::bounded::<Vec<u8>>(1))
                 .unzip();
             // spawn reader thread
             let reader = scope.spawn(closure!(clone sfi, |_| -> Result<()> {
-                let mut sn: usize = 0;
+                let input = &inputs[i];
+                let blocks = input.index.source().blocks.clone();
+                blocks.sort_by(|a, b|a.stat.ts_min_max.partial_cmp(&b.stat.ts_min_max).unwrap());
                 let scanner = Scanner::new(sfi, "\n".to_string());
-                for item in scanner.items(&mut input) {
-                    if let Err(_) = txi[sn % m].send(item?) {
+                for item in scanner.items(&mut input.stream) {
+                    if let Err(_) = stx[i].send(item?) {
                         break;
                     }
-                    sn += 1;
                 }
                 Ok(())
             }));
@@ -283,7 +309,9 @@ impl App {
                 Ok(())
             }));
             // collect errors from reader and writer threads
-            reader.join().unwrap()?;
+            for reader in readers {
+                reader.join().unwrap()?;
+            }
             writer.join().unwrap()?;
             Ok(())
         })

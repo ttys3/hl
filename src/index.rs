@@ -498,7 +498,7 @@ pub struct SourceFile {
 // ---
 
 /// SourceBlock contains index data of a block in a scanned source log file.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SourceBlock {
     pub offset: u64,
     pub size: u32,
@@ -516,12 +516,33 @@ impl SourceBlock {
             chronology,
         }
     }
+
+    /// Returns true if SourceBlock contains at least one line matching the given level or higher level.
+    pub fn match_level(&self, level: Level) -> bool {
+        let mut flags = 0;
+        for &l in &[Level::Error, Level::Warning, Level::Info, Level::Debug] {
+            flags |= level_to_flag(l);
+            if l == level {
+                break;
+            }
+        }
+        self.stat.flags & flags != 0
+    }
+
+    /// Returns true if this SourceBlock overlaps by time with other SourceBlock.
+    pub fn overlaps_by_time(&self, other: &SourceBlock) -> bool {
+        if let (Some(ts1), Some(ts2)) = (self.stat.ts_min_max, other.stat.ts_min_max) {
+            (ts2.0 >= ts1.0 && ts2.0 <= ts1.1) || (ts2.1 >= ts1.0 && ts2.1 <= ts1.1)
+        } else {
+            false
+        }
+    }
 }
 
 // ---
 
 /// Stat contains statistical information over a file or over a block.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Stat {
     pub flags: u64,
     pub lines_valid: u64,
@@ -567,6 +588,7 @@ impl Stat {
 // ---
 
 /// Chronology contains information about ordering of log messages by timestamp in a SourceBlock.
+#[derive(Clone)]
 pub struct Chronology {
     pub bitmap: Vec<u64>,
     pub offsets: Vec<OffsetPair>,
@@ -596,7 +618,7 @@ impl fmt::Debug for Chronology {
 // ---
 
 /// OffsetPair contains information offsets for a line in bytes in a SourceBlock and in a jump table.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct OffsetPair {
     pub bytes: u32,
     pub jumps: u32,
@@ -688,6 +710,15 @@ fn strip<'a>(slice: &'a [u8], ch: u8) -> &'a [u8] {
         &slice[..n - 1]
     } else {
         slice
+    }
+}
+
+fn level_to_flag(level: Level) -> u64 {
+    match level {
+        Level::Debug => schema::FLAG_LEVEL_DEBUG,
+        Level::Info => schema::FLAG_LEVEL_INFO,
+        Level::Warning => schema::FLAG_LEVEL_WARNING,
+        Level::Error => schema::FLAG_LEVEL_ERROR,
     }
 }
 
