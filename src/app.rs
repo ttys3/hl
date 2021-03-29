@@ -1,4 +1,5 @@
 // std imports
+use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::fs;
 use std::io::Write;
@@ -11,7 +12,7 @@ use closure::closure;
 use crossbeam_channel as channel;
 use crossbeam_channel::RecvError;
 use crossbeam_utils::thread;
-use itertools::{izip, Itertools};
+use itertools::izip;
 use serde_json as json;
 
 // local imports
@@ -219,32 +220,18 @@ impl App {
         }
 
         let n = self.options.concurrency;
-        let m = inputs.len();
         let sfi = Arc::new(SegmentBufFactory::new(self.options.buffer_size.try_into()?));
         let bfo = BufFactory::new(self.options.buffer_size.try_into()?);
         thread::scope(|scope| -> Result<()> {
             // prepare receive/transmit channels for sorter stage
-            let (stx, srx): (Vec<_>, Vec<_>) = (0..m).map(|_| channel::bounded(1)).unzip();
+            let (stx, srx): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded(1)).unzip();
             // prepare receive/transmit channels for parser stage
-            let (ptx, prx): (Vec<_>, Vec<_>) = (0..m).map(|_| channel::bounded(1)).unzip();
+            let (ptx, prx): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded(1)).unzip();
             // prepare receive/transmit channels for formatter stage
             let (ftx, frx): (Vec<_>, Vec<_>) = (0..n)
                 .into_iter()
                 .map(|_| channel::bounded::<Vec<u8>>(1))
                 .unzip();
-            // spawn reader thread
-            let reader = scope.spawn(closure!(clone sfi, |_| -> Result<()> {
-                let input = &inputs[i];
-                let blocks = input.index.source().blocks.clone();
-                blocks.sort_by(|a, b|a.stat.ts_min_max.partial_cmp(&b.stat.ts_min_max).unwrap());
-                let scanner = Scanner::new(sfi, "\n".to_string());
-                for item in scanner.items(&mut input.stream) {
-                    if let Err(_) = stx[i].send(item?) {
-                        break;
-                    }
-                }
-                Ok(())
-            }));
             // spawn processing threads
             for (rxi, txo) in izip!(rxi, txo) {
                 scope.spawn(closure!(ref bfo, ref sfi, |_| {
@@ -291,6 +278,35 @@ impl App {
                         }
                     }
                     sn += 1;
+                }
+                Ok(())
+            }));
+            // spawn reader threads
+            let reader = scope.spawn(closure!(clone sfi, |_| -> Result<()> {
+                let mut workspace = VecDeque::new();
+                let mut last_ts = None;
+                let mut blocks = blocks.iter();
+                loop {
+                    if let Some(last_ts) = last_ts {
+                        if workspace.front().map(|x|x.2 < last_ts).unwrap_or_default() {
+                            workspace.pop_front();
+                        }
+                        if workspace.back().map(|x|x.2 >= last_ts)
+                    }
+                    if workspace.len() != 0 {
+                            if workspace.front().
+                        }
+                    }
+                    if workspace.len() == 0 || workspace.back().
+                }
+                let input = &inputs[i];
+                let blocks = input.index.source().blocks.clone();
+                blocks.sort_by(|a, b|a.stat.ts_min_max.partial_cmp(&b.stat.ts_min_max).unwrap());
+                let scanner = Scanner::new(sfi, "\n".to_string());
+                for item in scanner.items(&mut input.stream) {
+                    if let Err(_) = stx[i].send(item?) {
+                        break;
+                    }
                 }
                 Ok(())
             }));
@@ -361,3 +377,6 @@ fn rtrim<'a>(s: &'a [u8], c: u8) -> &'a [u8] {
         s
     }
 }
+
+// [1..4] [2..5] [4..10] [12..14] [14..18]
+// [[1..4], [2..5]], [[2..5], [4..10]]
