@@ -195,14 +195,13 @@ impl App {
             writeln!(output, "{:#?}", input.index);
         }
 
-        /*
-        let mut input = ConcatReader::new(inputs.into_iter().map(|x| Ok(x)));
         let n = self.options.concurrency;
+        let m = inputs.len();
         let sfi = Arc::new(SegmentBufFactory::new(self.options.buffer_size.try_into()?));
         let bfo = BufFactory::new(self.options.buffer_size.try_into()?);
         thread::scope(|scope| -> Result<()> {
             // prepare receive/transmit channels for input data
-            let (txi, rxi): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded(1)).unzip();
+            let (txi, rxi): (Vec<_>, Vec<_>) = (0..m).map(|_| channel::bounded(1)).unzip();
             // prepare receive/transmit channels for output data
             let (txo, rxo): (Vec<_>, Vec<_>) = (0..n)
                 .into_iter()
@@ -213,7 +212,7 @@ impl App {
                 let mut sn: usize = 0;
                 let scanner = Scanner::new(sfi, "\n".to_string());
                 for item in scanner.items(&mut input) {
-                    if let Err(_) = txi[sn % n].send(item?) {
+                    if let Err(_) = txi[sn % m].send(item?) {
                         break;
                     }
                     sn += 1;
@@ -275,7 +274,6 @@ impl App {
             Ok(())
         })
         .unwrap()?;
-        */
 
         return Ok(());
     }
