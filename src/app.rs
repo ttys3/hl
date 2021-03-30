@@ -295,6 +295,7 @@ impl App {
                 }
                 Ok(())
             }));
+            /*
             // spawn reader threads
             let reader = scope.spawn(closure!(clone sfi, |_| -> Result<()> {
                 let mut workspace = VecDeque::new();
@@ -328,6 +329,7 @@ impl App {
             for reader in readers {
                 reader.join().unwrap()?;
             }
+            */
             writer.join().unwrap()?;
             Ok(())
         })
