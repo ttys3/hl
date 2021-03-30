@@ -1,7 +1,9 @@
 // std imports
 use std::fs::File;
 use std::io::{stdin, BufReader, Error, Read, Result, Seek};
+use std::ops::Deref;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 // third-party imports
 use ansi_term::Colour;
@@ -9,7 +11,7 @@ use flate2::bufread::GzDecoder;
 
 // local imports
 use crate::index::{Index, Indexer};
-use crate::scanning::{SegmentBufFactory, SegmentBuf};
+use crate::scanning::{SegmentBuf, SegmentBufFactory};
 
 // ---
 
@@ -100,8 +102,11 @@ impl IndexedInput {
         Ok(Self::new(name, stream, index))
     }
 
-    pub fn into_blocks(self) -> Blocks<IndexedInput, impl Iterator<Item=usize>> {
-        Blocks::new(self, (0..self.index.source().blocks.len()).into_iter())
+    pub fn into_blocks(self) -> Blocks<IndexedInput, impl Iterator<Item = usize>> {
+        Blocks::new(
+            Arc::new(self),
+            (0..self.index.source().blocks.len()).into_iter(),
+        )
     }
 
     pub fn into_lines(&self) -> Lines<IndexedInput> {
@@ -116,23 +121,25 @@ pub struct Blocks<I, II> {
     indexes: II,
 }
 
-impl<II> Blocks<IndexedInput, II> {
+impl<II: Iterator<Item = usize>> Blocks<IndexedInput, II> {
     pub fn new(input: Arc<IndexedInput>, indexes: II) -> Self {
         Self { input, indexes }
     }
 
-    pub fn sorted(self) -> Blocks<IndexedInput, impl Iterator<Item=usize>> {
-        let mut indexes = self.indexes.collect();
-        indexes.sort_by_key(|i| self.input.source().blocks[i].ts_min_max);
-        Self{ self.input, indexes.into_iter())
+    pub fn sorted(self) -> Blocks<IndexedInput, impl Iterator<Item = usize>> {
+        let mut indexes: Vec<_> = self.indexes.collect();
+        indexes.sort_by_key(|&i| self.input.index.source().blocks[i].stat.ts_min_max);
+        Blocks::new(self.input, indexes.into_iter())
     }
 }
 
-impl<II> Iterator for Blocks<IndexedInput, II> {
+impl<II: Iterator<Item = usize>> Iterator for Blocks<IndexedInput, II> {
     type Item = Block<IndexedInput>;
 
-    fn next(&mut self) -> Option<Self::Item>{ 
-        self.indexes.next().map(|i|Block::new(self.input.clone(), i))
+    fn next(&mut self) -> Option<Self::Item> {
+        self.indexes
+            .next()
+            .map(|i| Block::new(self.input.clone(), i))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -143,16 +150,21 @@ impl<II> Iterator for Blocks<IndexedInput, II> {
         self.indexes.count()
     }
 
-    fn last(self) -> Option<Self::Item> { 
-        self.indexes.last().map(|i|Block::new(self.input.clone(), i))
+    fn last(self) -> Option<Self::Item> {
+        self.indexes
+            .last()
+            .map(|i| Block::new(self.input.clone(), i))
     }
 
-    fn advance_by(&mut self, n: usize) -> Result<(), usize> { 
+    #[cfg(feature = "iter_advance_by")]
+    fn advance_by(&mut self, n: usize) -> Result<(), usize> {
         self.indexes.advance_by(n)
     }
 
-    fn nth(&mut self, n: usize) -> Option<Self::Item> { 
-        self.indexes.nth(n).map(|i|Block::new(self.input.clone(), i))
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.indexes
+            .nth(n)
+            .map(|i| Block::new(self.input.clone(), i))
     }
 }
 
@@ -164,38 +176,40 @@ pub struct Block<I> {
 }
 
 impl Block<IndexedInput> {
-    pub fn new(input: IndexedInput, index: usize) -> Self {
-        Self{input, index}
+    pub fn new(input: Arc<IndexedInput>, index: usize) -> Self {
+        Self { input, index }
     }
 
-    pub fn into_lines(self, sf: Arc<SegmentBufFactory>) -> Lines<Block<IndexedInput>> {
-        Lines::new(self, sf)
+    pub fn into_lines(self, sf: Arc<SegmentBufFactory>) -> BlockLines<IndexedInput> {
+        BlockLines::new(self, sf)
     }
 }
 
 // ---
 
-pub struct Lines<B> {
-    block: B,
+pub struct BlockLines<I> {
+    block: Block<I>,
     sf: Arc<SegmentBufFactory>,
     buf: Arc<SegmentBuf>,
 }
 
-impl Lines<Block<IndexedInput>> {
+impl BlockLines<IndexedInput> {
     pub fn new(block: Block<IndexedInput>, sf: Arc<SegmentBufFactory>) -> Self {
         let buf = sf.new_segment();
         if buf.data.capacity().len() < block.size {
             sf.recycle(buf);
         }
-        Self{block, sf}
+        Self { block, sf }
     }
 }
 
-impl<II> Iterator for Lines<Block<IndexedInput>, II> {
-    type Item = Line<Block<IndexedInput>>;
+impl Iterator for BlockLines<IndexedInput> {
+    type Item = BlockLine<IndexedInput>;
 
-    fn next(&mut self) -> Option<Self::Item>{ 
-        self.indexes.next().map(|i|Block::new(self.input.clone(), i))
+    fn next(&mut self) -> Option<Self::Item> {
+        self.indexes
+            .next()
+            .map(|i| Block::new(self.input.clone(), i))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -206,16 +220,20 @@ impl<II> Iterator for Lines<Block<IndexedInput>, II> {
         self.indexes.count()
     }
 
-    fn last(self) -> Option<Self::Item> { 
-        self.indexes.last().map(|i|Block::new(self.input.clone(), i))
+    fn last(self) -> Option<Self::Item> {
+        self.indexes
+            .last()
+            .map(|i| Block::new(self.input.clone(), i))
     }
 
-    fn advance_by(&mut self, n: usize) -> Result<(), usize> { 
+    fn advance_by(&mut self, n: usize) -> Result<(), usize> {
         self.indexes.advance_by(n)
     }
 
-    fn nth(&mut self, n: usize) -> Option<Self::Item> { 
-        self.indexes.nth(n).map(|i|Block::new(self.input.clone(), i))
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.indexes
+            .nth(n)
+            .map(|i| Block::new(self.input.clone(), i))
     }
 }
 
