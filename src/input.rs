@@ -9,6 +9,7 @@ use flate2::bufread::GzDecoder;
 
 // local imports
 use crate::index::{Index, Indexer};
+use crate::scanning::{SegmentBufFactory, SegmentBuf};
 
 // ---
 
@@ -98,7 +99,127 @@ impl IndexedInput {
 
         Ok(Self::new(name, stream, index))
     }
+
+    pub fn into_blocks(self) -> Blocks<IndexedInput, impl Iterator<Item=usize>> {
+        Blocks::new(self, (0..self.index.source().blocks.len()).into_iter())
+    }
+
+    pub fn into_lines(&self) -> Lines<IndexedInput> {
+        Lines::new(self.into_blocks())
+    }
 }
+
+// ---
+
+pub struct Blocks<I, II> {
+    input: Arc<I>,
+    indexes: II,
+}
+
+impl<II> Blocks<IndexedInput, II> {
+    pub fn new(input: Arc<IndexedInput>, indexes: II) -> Self {
+        Self { input, indexes }
+    }
+
+    pub fn sorted(self) -> Blocks<IndexedInput, impl Iterator<Item=usize>> {
+        let mut indexes = self.indexes.collect();
+        indexes.sort_by_key(|i| self.input.source().blocks[i].ts_min_max);
+        Self{ self.input, indexes.into_iter())
+    }
+}
+
+impl<II> Iterator for Blocks<IndexedInput, II> {
+    type Item = Block<IndexedInput>;
+
+    fn next(&mut self) -> Option<Self::Item>{ 
+        self.indexes.next().map(|i|Block::new(self.input.clone(), i))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.indexes.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.indexes.count()
+    }
+
+    fn last(self) -> Option<Self::Item> { 
+        self.indexes.last().map(|i|Block::new(self.input.clone(), i))
+    }
+
+    fn advance_by(&mut self, n: usize) -> Result<(), usize> { 
+        self.indexes.advance_by(n)
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> { 
+        self.indexes.nth(n).map(|i|Block::new(self.input.clone(), i))
+    }
+}
+
+// ---
+
+pub struct Block<I> {
+    input: Arc<I>,
+    index: usize,
+}
+
+impl Block<IndexedInput> {
+    pub fn new(input: IndexedInput, index: usize) -> Self {
+        Self{input, index}
+    }
+
+    pub fn into_lines(self, sf: Arc<SegmentBufFactory>) -> Lines<Block<IndexedInput>> {
+        Lines::new(self, sf)
+    }
+}
+
+// ---
+
+pub struct Lines<B> {
+    block: B,
+    sf: Arc<SegmentBufFactory>,
+    buf: Arc<SegmentBuf>,
+}
+
+impl Lines<Block<IndexedInput>> {
+    pub fn new(block: Block<IndexedInput>, sf: Arc<SegmentBufFactory>) -> Self {
+        let buf = sf.new_segment();
+        if buf.data.capacity().len() < block.size {
+            sf.recycle(buf);
+        }
+        Self{block, sf}
+    }
+}
+
+impl<II> Iterator for Lines<Block<IndexedInput>, II> {
+    type Item = Line<Block<IndexedInput>>;
+
+    fn next(&mut self) -> Option<Self::Item>{ 
+        self.indexes.next().map(|i|Block::new(self.input.clone(), i))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.indexes.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.indexes.count()
+    }
+
+    fn last(self) -> Option<Self::Item> { 
+        self.indexes.last().map(|i|Block::new(self.input.clone(), i))
+    }
+
+    fn advance_by(&mut self, n: usize) -> Result<(), usize> { 
+        self.indexes.advance_by(n)
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> { 
+        self.indexes.nth(n).map(|i|Block::new(self.input.clone(), i))
+    }
+}
+
+// ---
 
 // ---
 
