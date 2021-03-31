@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 // third-party imports
-use ansi_term::Colour;
 use chrono::{FixedOffset, Local, TimeZone};
 use chrono_tz::{Tz, UTC};
 use structopt::clap::arg_enum;
@@ -16,7 +15,8 @@ use structopt::StructOpt;
 // local imports
 use hl::datefmt::LinuxDateFormat;
 use hl::error::*;
-use hl::input::{open, ConcatReader, Input, InputStream};
+// use hl::index::Indexer;
+use hl::input::InputReference;
 use hl::output::{OutputStream, Pager};
 use hl::signal::SignalHandler;
 use hl::theme::Theme;
@@ -114,6 +114,10 @@ struct Opt {
     /// Show empty fields, overrides --hide-empty-fields option.
     #[structopt(long, short = "E")]
     show_empty_fields: bool,
+
+    /// Sort messages chronologically.
+    #[structopt(long, short = "s")]
+    sort: bool,
 }
 
 arg_enum! {
@@ -236,25 +240,24 @@ fn run() -> Result<()> {
             FixedOffset::east(offset.num_seconds() as i32)
         },
         hide_empty_fields,
+        sort: opt.sort,
     });
 
     // Configure input.
-    let inputs = opt
+    let mut inputs = opt
         .files
         .iter()
         .map(|x| {
             if x.to_str() == Some("-") {
-                Ok(Input::new("<stdin>".into(), Box::new(std::io::stdin())))
+                InputReference::Stdin
             } else {
-                open(&x)
+                InputReference::File(x.clone())
             }
         })
-        .collect::<std::io::Result<Vec<_>>>()?;
-    let mut input: InputStream = if inputs.len() == 0 {
-        Box::new(std::io::stdin())
-    } else {
-        Box::new(ConcatReader::new(inputs.into_iter().map(|x| Ok(x))))
-    };
+        .collect::<Vec<_>>();
+    if inputs.len() == 0 {
+        inputs.push(InputReference::Stdin);
+    }
     let paging = match opt.paging {
         PagingOption::Auto => {
             if stdout_is_atty() {
@@ -283,7 +286,7 @@ fn run() -> Result<()> {
     }
 
     // Run the app.
-    let run = || match app.run(input.as_mut(), output.as_mut()) {
+    let run = || match app.run(inputs, output.as_mut()) {
         Ok(()) => Ok(()),
         Err(Error::Io(ref e)) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
         Err(err) => Err(err),
@@ -295,7 +298,7 @@ fn run() -> Result<()> {
 
 fn main() {
     if let Err(err) = run() {
-        eprintln!("{}: {}", Colour::Red.paint("error"), err);
+        eprintln!("{}", err);
         process::exit(1);
     }
 }
