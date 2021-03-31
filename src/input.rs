@@ -1,7 +1,7 @@
 // std imports
 use std::fs::File;
 use std::io::{stdin, BufReader, Error, Read, Result, Seek};
-use std::ops::Deref;
+use std::mem::size_of_val;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -10,14 +10,16 @@ use ansi_term::Colour;
 use flate2::bufread::GzDecoder;
 
 // local imports
-use crate::index::{Index, Indexer};
-use crate::scanning::{SegmentBuf, SegmentBufFactory};
+use crate::index::{Chronology, Index, Indexer, SourceBlock};
+use crate::pool::SQPool;
 
 // ---
 
 pub type InputStream = Box<dyn Read + Send + Sync>;
 
 pub type InputSeekStream = Box<dyn ReadSeek + Send + Sync>;
+
+pub type BufPool = SQPool<Arc<Vec<u8>>>;
 
 // ---
 
@@ -173,15 +175,32 @@ impl<II: Iterator<Item = usize>> Iterator for Blocks<IndexedInput, II> {
 pub struct Block<I> {
     input: Arc<I>,
     index: usize,
+    buf_pool: Option<Arc<BufPool>>,
 }
 
 impl Block<IndexedInput> {
     pub fn new(input: Arc<IndexedInput>, index: usize) -> Self {
-        Self { input, index }
+        Self {
+            input,
+            index,
+            buf_pool: None,
+        }
     }
 
-    pub fn into_lines(self, sf: Arc<SegmentBufFactory>) -> BlockLines<IndexedInput> {
-        BlockLines::new(self, sf)
+    pub fn with_buf_pool(self, buf_pool: Arc<BufPool>) -> Self {
+        Self {
+            input: self.input,
+            index: self.index,
+            buf_pool: Some(buf_pool),
+        }
+    }
+
+    pub fn into_lines(self) -> Result<BlockLines<IndexedInput>> {
+        BlockLines::new(self)
+    }
+
+    fn source_block(&self) -> &SourceBlock {
+        self.input.index.source().blocks[self.index]
     }
 }
 
@@ -189,17 +208,31 @@ impl Block<IndexedInput> {
 
 pub struct BlockLines<I> {
     block: Block<I>,
-    sf: Arc<SegmentBufFactory>,
-    buf: Arc<SegmentBuf>,
+    buf: Arc<Vec<u8>>,
+    counter: usize,
 }
 
 impl BlockLines<IndexedInput> {
-    pub fn new(block: Block<IndexedInput>, sf: Arc<SegmentBufFactory>) -> Self {
-        let buf = sf.new_segment();
-        if buf.data.capacity().len() < block.size {
-            sf.recycle(buf);
-        }
-        Self { block, sf }
+    pub fn new(block: Block<IndexedInput>) -> Result<Self> {
+        let mut buf = if let Some(pool) = block.buf_pool {
+            pool.checkout()
+        } else {
+            Arc::new(Vec::new())
+        };
+        let source_block = block.source_block();
+        buf.resize(source_block.size, 0);
+        let stream = block.input.stream;
+        stream.seek(source_block.offset)?;
+        stream.read(&mut buf)?;
+        Ok(Self {
+            block,
+            buf,
+            counter: 0,
+        })
+    }
+
+    fn source_block(&self) -> SourceBlock {
+        self.block.source_block()
     }
 }
 
@@ -207,9 +240,19 @@ impl Iterator for BlockLines<IndexedInput> {
     type Item = BlockLine<IndexedInput>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.indexes
-            .next()
-            .map(|i| Block::new(self.input.clone(), i))
+        let block = self.source_block();
+        if self.counter >= block.lines_valid {
+            return None;
+        }
+        let bitmap = &block.chronology.bitmap;
+        if bitmap[self.counter / size_of_val(&bitmap[0])]
+            & (1 << self.counter % size_of_val(&bitmap[0]))
+            == 0
+        {
+            // read
+        } else {
+            // jump
+        }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -238,6 +281,18 @@ impl Iterator for BlockLines<IndexedInput> {
 }
 
 // ---
+
+pub struct BlockLine<I> {
+    buf: Arc<Vec<u8>>,
+    begin: usize,
+    end: usize,
+}
+
+impl BlockLine<IndexedInput> {
+    pub fn new(buf: Arc<Vec<u8>>, begin: usize, end: usize) -> Self {
+        Self { buf, begin, end }
+    }
+}
 
 // ---
 
