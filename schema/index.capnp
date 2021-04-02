@@ -56,7 +56,7 @@ struct Chronology {
     # Offset in a SourceBlock bytes for a first line referenced by bitmap item N can be found in offsets.bytes[N].
     # Each next line referenced by the same item in bitmap can be located in the SourceBlock bytes at offset of previous line + length of previous line if it has bit value 0 in bitmap, or at offset specified in a jump table if it has bit value 1.
     bitmap @0 :List(UInt64);
-    # Group `offset` holds offsets in SourceBlock bytes and in a `jumps` table for each 64th line.
+    # Group `offsets` holds offsets in SourceBlock bytes and in a `jumps` table for each 64th line.
     offsets :group {
         bytes @1 :List(UInt32);
         jumps @2 :List(UInt32);
