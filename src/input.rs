@@ -266,6 +266,10 @@ impl Iterator for BlockLines<IndexedInput> {
             self.byte = offsets.bytes as usize;
             self.jump = offsets.jumps as usize;
         }
+        if bitmap[n] & (1 << m) != 0 {
+            self.byte = block.chronology.jumps[self.jump] as usize;
+            self.jump += 1;
+        }
         let s = &self.buf[self.byte..];
         let l = s
             .iter()
@@ -274,10 +278,6 @@ impl Iterator for BlockLines<IndexedInput> {
         let offset = self.byte;
         self.byte += l;
         self.current += 1;
-        if bitmap[n] & (1 << m) != 0 {
-            self.byte = block.chronology.jumps[self.jump] as usize;
-            self.jump += 1;
-        }
 
         Some(BlockLine::new(self.buf.clone(), offset, offset + l))
     }
