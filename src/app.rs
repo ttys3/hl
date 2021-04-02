@@ -1,5 +1,5 @@
 // std imports
-use std::collections::VecDeque;
+// use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::fs;
 use std::io::Write;
@@ -166,7 +166,7 @@ impl App {
         })
         .unwrap()?;
 
-        return Ok(());
+        Ok(())
     }
 
     fn sort(
@@ -192,10 +192,19 @@ impl App {
             .map(|x| x.index(&indexer))
             .collect::<Result<Vec<_>>>()?;
 
+        for input in inputs {
+            for block in input.into_blocks() {
+                for line in block.into_lines()? {
+                    output.write_all(line.bytes())?;
+                }
+            }
+        }
+
+        /*
         let mut blocks: Vec<_> = inputs
             .iter()
             .enumerate()
-            .map(|(i, input)| input.index.source().blocks.iter().map(|block| (block, i)))
+            .map(|(i, &input)| input.index.source().blocks.iter().map(|&block| (block, i)))
             .flatten()
             .filter_map(|(block, i)| {
                 if block.stat.lines_valid == 0 {
@@ -218,7 +227,9 @@ impl App {
         for input in inputs {
             writeln!(output, "{:#?}", input.index);
         }
+        */
 
+        /*
         let n = self.options.concurrency;
         let sfi = Arc::new(SegmentBufFactory::new(self.options.buffer_size.try_into()?));
         let bfo = BufFactory::new(self.options.buffer_size.try_into()?);
@@ -281,7 +292,9 @@ impl App {
                 }
                 Ok(())
             }));
-            /*
+            */
+
+        /*
             // spawn reader threads
             let reader = scope.spawn(closure!(clone sfi, |_| -> Result<()> {
                 let mut workspace = VecDeque::new();
@@ -315,13 +328,13 @@ impl App {
             for reader in readers {
                 reader.join().unwrap()?;
             }
-            */
             writer.join().unwrap()?;
             Ok(())
         })
         .unwrap()?;
+            */
 
-        return Ok(());
+        Ok(())
     }
 }
 
