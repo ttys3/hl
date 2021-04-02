@@ -196,7 +196,15 @@ impl Block<IndexedInput> {
         BlockLines::new(self)
     }
 
-    fn source_block(&self) -> &SourceBlock {
+    pub fn offset(&self) -> u64 {
+        self.source_block().offset
+    }
+
+    pub fn size(&self) -> u32 {
+        self.source_block().size
+    }
+
+    pub fn source_block(&self) -> &SourceBlock {
         &self.input.index.source().blocks[self.index]
     }
 }
@@ -226,7 +234,8 @@ impl BlockLines<IndexedInput> {
             let mut stream = block.input.stream.lock().unwrap();
             stream.seek(SeekFrom::Start(source_block.offset))?;
             stream.read(&mut buf)?;
-            let total = source_block.stat.lines_valid.try_into()?;
+            let total =
+                (source_block.stat.lines_valid + source_block.stat.lines_invalid).try_into()?;
             (buf, total)
         };
         Ok(Self {
@@ -258,15 +267,18 @@ impl Iterator for BlockLines<IndexedInput> {
             self.jump = offsets.jumps as usize;
         }
         let s = &self.buf[self.byte..];
-        let l = s.iter().position(|&x| x == b'\n').unwrap_or(s.len());
+        let l = s
+            .iter()
+            .position(|&x| x == b'\n')
+            .map_or(s.len(), |i| i + 1);
+        let offset = self.byte;
+        self.byte += l;
+        self.current += 1;
         if bitmap[n] & (1 << m) != 0 {
             self.byte = block.chronology.jumps[self.jump] as usize;
             self.jump += 1;
         }
 
-        let offset = self.byte;
-        self.byte += l;
-        self.current += 1;
         Some(BlockLine::new(self.buf.clone(), offset, offset + l))
     }
 
@@ -295,6 +307,14 @@ impl BlockLine {
 
     pub fn bytes(&self) -> &[u8] {
         &self.buf[self.begin..self.end]
+    }
+
+    pub fn offset(&self) -> usize {
+        self.begin
+    }
+
+    pub fn len(&self) -> usize {
+        self.end - self.begin
     }
 }
 
