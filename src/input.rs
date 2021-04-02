@@ -1,25 +1,27 @@
 // std imports
+use std::convert::TryInto;
 use std::fs::File;
-use std::io::{stdin, BufReader, Error, Read, Result, Seek};
+use std::io::{self, stdin, BufReader, Read, Seek, SeekFrom};
 use std::mem::size_of_val;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 // third-party imports
 use ansi_term::Colour;
 use flate2::bufread::GzDecoder;
 
 // local imports
-use crate::index::{Chronology, Index, Indexer, SourceBlock};
+use crate::error::Result;
+use crate::index::{Index, Indexer, SourceBlock};
 use crate::pool::SQPool;
 
 // ---
 
 pub type InputStream = Box<dyn Read + Send + Sync>;
 
-pub type InputSeekStream = Box<dyn ReadSeek + Send + Sync>;
+pub type InputSeekStream = Box<Mutex<dyn ReadSeek + Send + Sync>>;
 
-pub type BufPool = SQPool<Arc<Vec<u8>>>;
+pub type BufPool = SQPool<Vec<u8>>;
 
 // ---
 
@@ -28,21 +30,21 @@ pub enum InputReference {
     File(PathBuf),
 }
 
-impl Into<Result<Input>> for InputReference {
-    fn into(self) -> Result<Input> {
+impl Into<io::Result<Input>> for InputReference {
+    fn into(self) -> io::Result<Input> {
         self.open()
     }
 }
 
 impl InputReference {
-    pub fn open(&self) -> Result<Input> {
+    pub fn open(&self) -> io::Result<Input> {
         match self {
             InputReference::Stdin => Ok(Input::new("<stdin>".into(), Box::new(stdin()))),
             InputReference::File(filename) => Input::open(&filename),
         }
     }
 
-    pub fn index(&self, indexer: &Indexer) -> crate::error::Result<IndexedInput> {
+    pub fn index(&self, indexer: &Indexer) -> Result<IndexedInput> {
         match self {
             InputReference::Stdin => panic!("indexing stdin is not implemented yet"),
             InputReference::File(filename) => IndexedInput::open(&filename, indexer),
@@ -62,10 +64,10 @@ impl Input {
         Self { name, stream }
     }
 
-    pub fn open(path: &PathBuf) -> Result<Self> {
+    pub fn open(path: &PathBuf) -> io::Result<Self> {
         let name = format!("file '{}'", Colour::Yellow.paint(path.to_string_lossy()));
         let f = File::open(path)
-            .map_err(|e| Error::new(e.kind(), format!("failed to open {}: {}", name, e)))?;
+            .map_err(|e| io::Error::new(e.kind(), format!("failed to open {}: {}", name, e)))?;
         let stream: InputStream = match path.extension().map(|x| x.to_str()) {
             Some(Some("gz")) => Box::new(GzDecoder::new(BufReader::new(f))),
             _ => Box::new(f),
@@ -91,13 +93,13 @@ impl IndexedInput {
         }
     }
 
-    pub fn open(path: &PathBuf, indexer: &Indexer) -> crate::error::Result<Self> {
+    pub fn open(path: &PathBuf, indexer: &Indexer) -> Result<Self> {
         let name = format!("file '{}'", Colour::Yellow.paint(path.to_string_lossy()));
         let f = File::open(path)
-            .map_err(|e| Error::new(e.kind(), format!("failed to open {}: {}", name, e)))?;
+            .map_err(|e| io::Error::new(e.kind(), format!("failed to open {}: {}", name, e)))?;
         let stream: InputSeekStream = match path.extension().map(|x| x.to_str()) {
             Some(Some("gz")) => panic!("sorting messages from gz files is not yet implemented"),
-            _ => Box::new(f),
+            _ => Box::new(Mutex::new(f)),
         };
         let index = indexer.index(path)?;
 
@@ -105,14 +107,8 @@ impl IndexedInput {
     }
 
     pub fn into_blocks(self) -> Blocks<IndexedInput, impl Iterator<Item = usize>> {
-        Blocks::new(
-            Arc::new(self),
-            (0..self.index.source().blocks.len()).into_iter(),
-        )
-    }
-
-    pub fn into_lines(&self) -> Lines<IndexedInput> {
-        Lines::new(self.into_blocks())
+        let n = self.index.source().blocks.len();
+        Blocks::new(Arc::new(self), (0..n).into_iter())
     }
 }
 
@@ -129,9 +125,10 @@ impl<II: Iterator<Item = usize>> Blocks<IndexedInput, II> {
     }
 
     pub fn sorted(self) -> Blocks<IndexedInput, impl Iterator<Item = usize>> {
-        let mut indexes: Vec<_> = self.indexes.collect();
-        indexes.sort_by_key(|&i| self.input.index.source().blocks[i].stat.ts_min_max);
-        Blocks::new(self.input, indexes.into_iter())
+        let (input, indexes) = (self.input, self.indexes);
+        let mut indexes: Vec<_> = indexes.collect();
+        indexes.sort_by_key(|&i| input.index.source().blocks[i].stat.ts_min_max);
+        Blocks::new(input, indexes.into_iter())
     }
 }
 
@@ -152,11 +149,11 @@ impl<II: Iterator<Item = usize>> Iterator for Blocks<IndexedInput, II> {
         self.indexes.count()
     }
 
-    fn last(self) -> Option<Self::Item> {
-        self.indexes
-            .last()
-            .map(|i| Block::new(self.input.clone(), i))
-    }
+    // fn last(self) -> Option<Self::Item> {
+    //     self.indexes
+    //         .last()
+    //         .map(|i| Block::new(self.input.clone(), i))
+    // }
 
     #[cfg(feature = "iter_advance_by")]
     fn advance_by(&mut self, n: usize) -> Result<(), usize> {
@@ -200,7 +197,7 @@ impl Block<IndexedInput> {
     }
 
     fn source_block(&self) -> &SourceBlock {
-        self.input.index.source().blocks[self.index]
+        &self.input.index.source().blocks[self.index]
     }
 }
 
@@ -209,88 +206,95 @@ impl Block<IndexedInput> {
 pub struct BlockLines<I> {
     block: Block<I>,
     buf: Arc<Vec<u8>>,
-    counter: usize,
+    total: usize,
+    current: usize,
+    byte: usize,
+    jump: usize,
 }
 
 impl BlockLines<IndexedInput> {
-    pub fn new(block: Block<IndexedInput>) -> Result<Self> {
-        let mut buf = if let Some(pool) = block.buf_pool {
-            pool.checkout()
-        } else {
-            Arc::new(Vec::new())
+    pub fn new(mut block: Block<IndexedInput>) -> Result<Self> {
+        let (buf, total) = {
+            let block = &mut block;
+            let mut buf = if let Some(pool) = &block.buf_pool {
+                pool.checkout()
+            } else {
+                Vec::new()
+            };
+            let source_block = block.source_block();
+            buf.resize(source_block.size.try_into()?, 0);
+            let mut stream = block.input.stream.lock().unwrap();
+            stream.seek(SeekFrom::Start(source_block.offset))?;
+            stream.read(&mut buf)?;
+            let total = source_block.stat.lines_valid.try_into()?;
+            (buf, total)
         };
-        let source_block = block.source_block();
-        buf.resize(source_block.size, 0);
-        let stream = block.input.stream;
-        stream.seek(source_block.offset)?;
-        stream.read(&mut buf)?;
         Ok(Self {
             block,
-            buf,
-            counter: 0,
+            buf: Arc::new(buf),
+            total,
+            current: 0,
+            byte: 0,
+            jump: 0,
         })
-    }
-
-    fn source_block(&self) -> SourceBlock {
-        self.block.source_block()
     }
 }
 
 impl Iterator for BlockLines<IndexedInput> {
-    type Item = BlockLine<IndexedInput>;
+    type Item = BlockLine;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let block = self.source_block();
-        if self.counter >= block.lines_valid {
+        if self.current >= self.total {
             return None;
         }
+        let block = self.block.source_block();
         let bitmap = &block.chronology.bitmap;
-        if bitmap[self.counter / size_of_val(&bitmap[0])]
-            & (1 << self.counter % size_of_val(&bitmap[0]))
-            == 0
-        {
-            // read
-        } else {
-            // jump
+        let k = 8 * size_of_val(&bitmap[0]);
+        let n = self.current / k;
+        let m = self.current % k;
+        if m == 0 {
+            let offsets = block.chronology.offsets[n];
+            self.byte = offsets.bytes as usize;
+            self.jump = offsets.jumps as usize;
         }
+        let s = &self.buf[self.byte..];
+        let l = s.iter().position(|&x| x == b'\n').unwrap_or(s.len());
+        if bitmap[n] & (1 << m) != 0 {
+            self.byte = block.chronology.jumps[self.jump] as usize;
+            self.jump += 1;
+        }
+
+        let offset = self.byte;
+        self.byte += l;
+        self.current += 1;
+        Some(BlockLine::new(self.buf.clone(), offset, offset + l))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.indexes.size_hint()
+        let count = self.total - self.current;
+        (count, Some(count))
     }
 
     fn count(self) -> usize {
-        self.indexes.count()
-    }
-
-    fn last(self) -> Option<Self::Item> {
-        self.indexes
-            .last()
-            .map(|i| Block::new(self.input.clone(), i))
-    }
-
-    fn advance_by(&mut self, n: usize) -> Result<(), usize> {
-        self.indexes.advance_by(n)
-    }
-
-    fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        self.indexes
-            .nth(n)
-            .map(|i| Block::new(self.input.clone(), i))
+        self.size_hint().0
     }
 }
 
 // ---
 
-pub struct BlockLine<I> {
+pub struct BlockLine {
     buf: Arc<Vec<u8>>,
     begin: usize,
     end: usize,
 }
 
-impl BlockLine<IndexedInput> {
+impl BlockLine {
     pub fn new(buf: Arc<Vec<u8>>, begin: usize, end: usize) -> Self {
         Self { buf, begin, end }
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.buf[self.begin..self.end]
     }
 }
 
@@ -309,9 +313,9 @@ impl<I> ConcatReader<I> {
 
 impl<I> Read for ConcatReader<I>
 where
-    I: Iterator<Item = Result<Input>>,
+    I: Iterator<Item = io::Result<Input>>,
 {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         loop {
             if self.item.is_none() {
                 match self.iter.next() {
@@ -326,7 +330,7 @@ where
 
             let input = self.item.as_mut().unwrap();
             let n = input.stream.read(buf).map_err(|e| {
-                Error::new(e.kind(), format!("failed to read {}: {}", input.name, e))
+                io::Error::new(e.kind(), format!("failed to read {}: {}", input.name, e))
             })?;
             if n != 0 {
                 return Ok(n);
