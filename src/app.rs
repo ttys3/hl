@@ -206,6 +206,7 @@ impl App {
             .map(|x| x.index(&indexer))
             .collect::<Result<Vec<_>>>()?;
 
+        /*
         for input in inputs {
             // writeln!(output, "{:#?}", input.index)?;
             for block in input.into_blocks().sorted() {
@@ -222,12 +223,19 @@ impl App {
                 }
             }
         }
+        */
 
-        /*
         let mut blocks: Vec<_> = inputs
             .iter()
             .enumerate()
-            .map(|(i, &input)| input.index.source().blocks.iter().map(|&block| (block, i)))
+            .map(|(i, input)| {
+                input
+                    .index
+                    .source()
+                    .blocks
+                    .iter()
+                    .map(move |block| (block, i))
+            })
             .flatten()
             .filter_map(|(block, i)| {
                 if block.stat.lines_valid == 0 {
@@ -247,10 +255,9 @@ impl App {
 
         blocks.sort_by(|a, b| (a.1, a.2, a.3).partial_cmp(&(b.1, b.2, b.3)).unwrap());
 
-        for input in inputs {
-            writeln!(output, "{:#?}", input.index);
+        for block in blocks {
+            writeln!(output, "{:#?}", block)?;
         }
-        */
 
         /*
         let n = self.options.concurrency;
