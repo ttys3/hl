@@ -258,17 +258,20 @@ impl Iterator for BlockLines<IndexedInput> {
         }
         let block = self.block.source_block();
         let bitmap = &block.chronology.bitmap;
-        let k = 8 * size_of_val(&bitmap[0]);
-        let n = self.current / k;
-        let m = self.current % k;
-        if m == 0 {
-            let offsets = block.chronology.offsets[n];
-            self.byte = offsets.bytes as usize;
-            self.jump = offsets.jumps as usize;
-        }
-        if bitmap[n] & (1 << m) != 0 {
-            self.byte = block.chronology.jumps[self.jump] as usize;
-            self.jump += 1;
+
+        if bitmap.len() != 0 {
+            let k = 8 * size_of_val(&bitmap[0]);
+            let n = self.current / k;
+            let m = self.current % k;
+            if m == 0 {
+                let offsets = block.chronology.offsets[n];
+                self.byte = offsets.bytes as usize;
+                self.jump = offsets.jumps as usize;
+            }
+            if bitmap[n] & (1 << m) != 0 {
+                self.byte = block.chronology.jumps[self.jump] as usize;
+                self.jump += 1;
+            }
         }
         let s = &self.buf[self.byte..];
         let l = s
