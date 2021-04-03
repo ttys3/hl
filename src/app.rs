@@ -12,8 +12,10 @@ use closure::closure;
 use crossbeam_channel as channel;
 use crossbeam_channel::RecvError;
 use crossbeam_utils::thread;
+use generic_array::{typenum::U32, GenericArray};
 use itertools::izip;
 use serde_json as json;
+use sha2::{Digest, Sha256};
 
 // local imports
 use crate::datefmt::{DateTimeFormat, DateTimeFormatter};
@@ -174,10 +176,12 @@ impl App {
         inputs: Vec<InputReference>,
         output: &mut (dyn Write + Send + Sync),
     ) -> Result<()> {
+        let param_hash = hex::encode(self.parameters_hash()?);
         let cache_dir = directories::BaseDirs::new()
             .and_then(|d| Some(d.cache_dir().into()))
             .unwrap_or(PathBuf::from(".cache"))
-            .join("github.com/pamburus/hl");
+            .join("github.com/pamburus/hl")
+            .join(param_hash);
         fs::create_dir_all(&cache_dir)?;
         let indexer = Indexer::new(
             self.options.concurrency,
@@ -354,6 +358,15 @@ impl App {
             */
 
         Ok(())
+    }
+
+    fn parameters_hash(&self) -> Result<GenericArray<u8, U32>> {
+        let mut hasher = Sha256::new();
+        bincode::serialize_into(
+            &mut hasher,
+            &(self.options.buffer_size, self.options.max_message_size),
+        )?;
+        Ok(hasher.finalize())
     }
 }
 
