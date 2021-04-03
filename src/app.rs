@@ -194,16 +194,16 @@ impl App {
 
         for input in inputs {
             // writeln!(output, "{:#?}", input.index)?;
-            for block in input.into_blocks() {
+            for block in input.into_blocks().sorted() {
                 // writeln!(
                 //     output,
                 //     "block at {} with size {}",
                 //     block.offset(),
                 //     block.size()
                 // )?;
-                writeln!(output, "{:#?}", block.source_block())?;
+                // writeln!(output, "{:#?}", block.source_block())?;
                 for line in block.into_lines()? {
-                    writeln!(output, "\n{} bytes at {}\n", line.len(), line.offset())?;
+                    // writeln!(output, "{} bytes at {}", line.len(), line.offset())?;
                     output.write_all(line.bytes())?;
                 }
             }
