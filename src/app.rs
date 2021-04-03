@@ -226,27 +226,21 @@ impl App {
         */
 
         let mut blocks: Vec<_> = inputs
-            .iter()
+            .into_iter()
             .enumerate()
-            .map(|(i, input)| {
-                input
-                    .index
-                    .source()
-                    .blocks
-                    .iter()
-                    .map(move |block| (block, i))
-            })
+            .map(|(i, input)| input.into_blocks().into_iter().map(move |block| (block, i)))
             .flatten()
             .filter_map(|(block, i)| {
-                if block.stat.lines_valid == 0 {
+                if block.source_block().stat.lines_valid == 0 {
                     return None;
                 }
                 if let Some(level) = self.options.filter.level {
-                    if !block.match_level(level) {
+                    if !block.source_block().match_level(level) {
                         return None;
                     }
                 }
                 block
+                    .source_block()
                     .stat
                     .ts_min_max
                     .map(|(ts_min, ts_max)| (block, ts_min, ts_max, i))
@@ -255,8 +249,18 @@ impl App {
 
         blocks.sort_by(|a, b| (a.1, a.2, a.3).partial_cmp(&(b.1, b.2, b.3)).unwrap());
 
-        for block in blocks {
-            writeln!(output, "{:#?}", block)?;
+        for (block, ts_min, ts_max, i) in blocks {
+            writeln!(
+                output,
+                "|{:10}.{:09}|{:10}.{:09} {:7} @[{}]{:9}",
+                ts_min.0,
+                ts_min.1,
+                ts_max.0,
+                ts_max.1,
+                block.size(),
+                i,
+                block.offset(),
+            )?;
         }
 
         /*
