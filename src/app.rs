@@ -231,17 +231,16 @@ impl App {
             .map(|(i, input)| input.into_blocks().map(move |block| (block, i)))
             .flatten()
             .filter_map(|(block, i)| {
-                if block.source_block().stat.lines_valid == 0 {
+                let src = block.source_block();
+                if src.stat.lines_valid == 0 {
                     return None;
                 }
                 if let Some(level) = self.options.filter.level {
-                    if !block.source_block().match_level(level) {
+                    if !src.match_level(level) {
                         return None;
                     }
                 }
-                block
-                    .source_block()
-                    .stat
+                src.stat
                     .ts_min_max
                     .map(|(ts_min, ts_max)| (block, ts_min, ts_max, i))
             })
