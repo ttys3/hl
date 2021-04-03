@@ -214,7 +214,7 @@ impl App {
         let mut blocks: Vec<_> = inputs
             .into_iter()
             .enumerate()
-            .map(|(i, input)| input.into_blocks().into_iter().map(move |block| (block, i)))
+            .map(|(i, input)| input.into_blocks().map(move |block| (block, i)))
             .flatten()
             .filter_map(|(block, i)| {
                 if block.source_block().stat.lines_valid == 0 {
