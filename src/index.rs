@@ -734,3 +734,22 @@ fn level_to_flag(level: Level) -> u64 {
 
 const VALID_MAGIC: u64 = 0x5845444e492d4c48;
 const CURRENT_VERSION: u64 = 1;
+
+/*
+---
+ TS encoding proposal
+---
+ 00 - seconds
+ 01 - milliseconds
+ 10 - microseconds
+ 11 - nanoseconds
+ xx0 - [*]seconds in next 5 bits
+ xx10 - [*]seconds in next 12 bits
+ xx110 - [*]seconds in next 19 bits
+ xx1110 - [*]seconds in next 26 bits
+ xx111100 - [*]seconds in next 32 bits
+ xx111101 - [*]seconds in next 40/40/48/48 bits
+ xx111110 - [*]seconds in next 48/56/56/64 bits
+ xx111111 - [*]seconds in next 64/80/88/96 bits
+---
+ */
