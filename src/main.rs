@@ -59,7 +59,7 @@ struct Opt {
     interrupt_ignore_count: usize,
     //
     /// Buffer size.
-    #[structopt(long, default_value = "2 MiB", overrides_with = "buffer-size", parse(try_from_str = parse_non_zero_size))]
+    #[structopt(long, default_value = "256 KiB", overrides_with = "buffer-size", parse(try_from_str = parse_non_zero_size))]
     buffer_size: usize,
     //
     /// Maximum message size.
