@@ -1,8 +1,9 @@
 // std imports
-// use std::collections::VecDeque;
+use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::fs;
 use std::io::Write;
+use std::iter::once;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -267,6 +268,71 @@ impl App {
         }
 
         /*
+                let batch = |ts_min| {
+                    let mut ts_next = ts_min;
+                    let mut next = None;
+                    let mut first = true;
+                    |it| if first {
+                            first = false;
+                            (ts_next, ||{
+                                let result = it.next();
+                                next = it.next();
+                                result
+                            })
+                        } else {
+                            ()
+                        }
+                        None =>                     match it.next() {
+                            None => None,
+                            Some(line) => {
+                                next = Some(line),
+                            }
+                        }
+
+
+                        Some()
+                    }
+                };
+
+                let (block, ts_min, ts_max, i) = blocks[0];
+                let mut ts_next = ts_min;
+                let lazy_lines = block
+                    .into_lines()
+                    .into_iter()
+                    .batching(batch);
+        */
+
+        /*
+        let mut workspace = VecDeque::new();
+        let mut last_ts = None;
+        let mut blocks = blocks.into_iter();
+        let mut next = blocks.next();
+        loop {
+            if let Some(last_ts) = last_ts {
+                if workspace.back().map(|x|x.2 >= last_ts) {
+                    if let Some((block, ts_min, ts_max, i)) = blocks.next() {
+                        workspace.push_back((block.into_lines(), ts_min, ts_max, i));
+                    }
+                }
+            }
+            if workspace.len() != 0 {
+                if workspace.front().
+                }
+            }
+            if workspace.len() == 0 || workspace.back().
+        }
+        let input = &inputs[i];
+        let blocks = input.index.source().blocks.clone();
+        blocks.sort_by(|a, b|a.stat.ts_min_max.partial_cmp(&b.stat.ts_min_max).unwrap());
+        let scanner = Scanner::new(sfi, "\n".to_string());
+        for item in scanner.items(&mut input.stream) {
+            if let Err(_) = stx[i].send(item?) {
+                break;
+            }
+        }
+        */
+
+        /*
         let n = self.options.concurrency;
         let sfi = Arc::new(SegmentBufFactory::new(self.options.buffer_size.try_into()?));
         let bfo = BufFactory::new(self.options.buffer_size.try_into()?);
@@ -329,9 +395,7 @@ impl App {
                 }
                 Ok(())
             }));
-            */
 
-        /*
             // spawn reader threads
             let reader = scope.spawn(closure!(clone sfi, |_| -> Result<()> {
                 let mut workspace = VecDeque::new();
@@ -369,7 +433,7 @@ impl App {
             Ok(())
         })
         .unwrap()?;
-            */
+        */
 
         Ok(())
     }
