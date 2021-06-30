@@ -61,7 +61,7 @@ jobs:
             artifact_name: hl
             asset_name: hl-macos.tar.gz
           - name: arm64-macos
-            os: macos-latest
+            os: macos-11.4
             target: aarch64-apple-darwin
             artifact_name: hl
             asset_name: hl-arm64-macos.tar.gz
@@ -71,7 +71,6 @@ jobs:
 
       - uses: actions-rs/toolchain@v1
         with:
-          profile: minimal
           toolchain: stable
 
       - name: Add target
@@ -81,7 +80,13 @@ jobs:
           echo "TARGET_FLAGS=--target ${{ matrix.target }}" >> $GITHUB_ENV
           echo "TARGET_DIR=./target/${{ matrix.target }}" >> $GITHUB_ENV
 
-      - name: Select cross
+      - name: Print system information
+        if: matrix.os == 'macos-11.4'
+        run: |
+          sw_vers
+          uname -amnprsv
+
+      - name: Install cross
         if: matrix.use_cross
         run: |
           cargo install cross
