@@ -2,15 +2,16 @@ use std::cmp::min;
 
 // ---
 
-pub trait Push<T> {
+pub trait Push<T: Clone> {
     fn push(&mut self, value: T);
-    fn extend_from_slice(&mut self, values: &[T]);
+    fn extend_from_slice(&mut self, values: &[T]) {
+        for value in values {
+            self.push(value.clone());
+        }
+    }
 }
 
-impl<T> Push<T> for Vec<T>
-where
-    T: Clone,
-{
+impl<T: Clone> Push<T> for Vec<T> {
     fn push(&mut self, value: T) {
         Vec::push(self, value)
     }
@@ -36,7 +37,7 @@ impl Counter {
     }
 }
 
-impl<T> Push<T> for Counter {
+impl<T: Clone> Push<T> for Counter {
     fn push(&mut self, _: T) {
         self.value += 1
     }

@@ -5,7 +5,7 @@ use crate::eseq;
 use crate::settings;
 use crate::types;
 
-use eseq::{Brightness, Color, ColorCode, Mode, Sequence, StyleCode};
+use eseq::{BasicColor::*, Brightness, Color, Command, CommandCode, Sequence};
 pub use types::Level;
 
 #[repr(u8)]
@@ -54,31 +54,31 @@ impl Style {
         Sequence::reset().into()
     }
 
-    fn convert_color(color: &settings::Color) -> ColorCode {
+    fn convert_color(color: &settings::Color) -> Color {
         match color {
             settings::Color::Plain(color) => {
                 let c = match color {
-                    settings::PlainColor::Black => (Color::Black, Brightness::Normal),
-                    settings::PlainColor::Blue => (Color::Blue, Brightness::Normal),
-                    settings::PlainColor::Cyan => (Color::Cyan, Brightness::Normal),
-                    settings::PlainColor::Green => (Color::Green, Brightness::Normal),
-                    settings::PlainColor::Magenta => (Color::Magenta, Brightness::Normal),
-                    settings::PlainColor::Red => (Color::Red, Brightness::Normal),
-                    settings::PlainColor::White => (Color::White, Brightness::Normal),
-                    settings::PlainColor::Yellow => (Color::Yellow, Brightness::Normal),
-                    settings::PlainColor::BrightBlack => (Color::Black, Brightness::Bright),
-                    settings::PlainColor::BrightBlue => (Color::Blue, Brightness::Bright),
-                    settings::PlainColor::BrightCyan => (Color::Cyan, Brightness::Bright),
-                    settings::PlainColor::BrightGreen => (Color::Green, Brightness::Bright),
-                    settings::PlainColor::BrightMagenta => (Color::Magenta, Brightness::Bright),
-                    settings::PlainColor::BrightRed => (Color::Red, Brightness::Bright),
-                    settings::PlainColor::BrightWhite => (Color::White, Brightness::Bright),
-                    settings::PlainColor::BrightYellow => (Color::Yellow, Brightness::Bright),
+                    settings::PlainColor::Black => (Black, Brightness::Normal),
+                    settings::PlainColor::Blue => (Blue, Brightness::Normal),
+                    settings::PlainColor::Cyan => (Cyan, Brightness::Normal),
+                    settings::PlainColor::Green => (Green, Brightness::Normal),
+                    settings::PlainColor::Magenta => (Magenta, Brightness::Normal),
+                    settings::PlainColor::Red => (Red, Brightness::Normal),
+                    settings::PlainColor::White => (White, Brightness::Normal),
+                    settings::PlainColor::Yellow => (Yellow, Brightness::Normal),
+                    settings::PlainColor::BrightBlack => (Black, Brightness::Bright),
+                    settings::PlainColor::BrightBlue => (Blue, Brightness::Bright),
+                    settings::PlainColor::BrightCyan => (Cyan, Brightness::Bright),
+                    settings::PlainColor::BrightGreen => (Green, Brightness::Bright),
+                    settings::PlainColor::BrightMagenta => (Magenta, Brightness::Bright),
+                    settings::PlainColor::BrightRed => (Red, Brightness::Bright),
+                    settings::PlainColor::BrightWhite => (White, Brightness::Bright),
+                    settings::PlainColor::BrightYellow => (Yellow, Brightness::Bright),
                 };
-                ColorCode::Plain(c.0, c.1)
+                Color::Plain(c.0, c.1)
             }
-            settings::Color::Palette(code) => ColorCode::Palette(*code),
-            settings::Color::RGB(settings::RGB(r, g, b)) => ColorCode::RGB(*r, *g, *b),
+            settings::Color::Palette(code) => Color::Palette(*code),
+            settings::Color::RGB(settings::RGB(r, g, b)) => Color::RGB(*r, *g, *b),
         }
     }
 }
@@ -91,28 +91,28 @@ impl<T: Into<Sequence>> From<T> for Style {
 
 impl From<&settings::Style> for Style {
     fn from(style: &settings::Style) -> Self {
-        let mut codes = Vec::<StyleCode>::new();
+        let mut codes = Vec::<Command>::new();
         for mode in &style.modes {
             codes.push(
                 match mode {
-                    settings::Mode::Bold => Mode::Bold,
-                    settings::Mode::Conseal => Mode::Conseal,
-                    settings::Mode::CrossedOut => Mode::CrossedOut,
-                    settings::Mode::Faint => Mode::Faint,
-                    settings::Mode::Italic => Mode::Italic,
-                    settings::Mode::RapidBlink => Mode::RapidBlink,
-                    settings::Mode::Reverse => Mode::Reverse,
-                    settings::Mode::SlowBlink => Mode::SlowBlink,
-                    settings::Mode::Underline => Mode::Underline,
+                    settings::Mode::Bold => CommandCode::SetBold,
+                    settings::Mode::Conceal => CommandCode::SetConcealed,
+                    settings::Mode::CrossedOut => CommandCode::SetCrossedOut,
+                    settings::Mode::Faint => CommandCode::SetFaint,
+                    settings::Mode::Italic => CommandCode::SetItalic,
+                    settings::Mode::RapidBlink => CommandCode::SetRapidBlink,
+                    settings::Mode::Reverse => CommandCode::SetReversed,
+                    settings::Mode::SlowBlink => CommandCode::SetSlowBlink,
+                    settings::Mode::Underline => CommandCode::SetUnderlined,
                 }
                 .into(),
             );
         }
         if let Some(color) = &style.background {
-            codes.push(StyleCode::Background(Self::convert_color(color)));
+            codes.push(Command::SetBackground(Self::convert_color(color)));
         }
         if let Some(color) = &style.foreground {
-            codes.push(StyleCode::Foreground(Self::convert_color(color)));
+            codes.push(Command::SetForeground(Self::convert_color(color)));
         }
         Self(codes.into())
     }

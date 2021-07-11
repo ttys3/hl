@@ -193,7 +193,7 @@ pub enum Mode {
     SlowBlink,
     RapidBlink,
     Reverse,
-    Conseal,
+    Conceal,
     CrossedOut,
 }
 
