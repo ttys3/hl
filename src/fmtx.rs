@@ -11,6 +11,16 @@ pub trait Push<T: Clone> {
     }
 }
 
+impl<T: Clone> Push<T> for &mut Vec<T> {
+    fn push(&mut self, value: T) {
+        Vec::push(self, value)
+    }
+
+    fn extend_from_slice(&mut self, values: &[T]) {
+        Vec::extend_from_slice(self, values)
+    }
+}
+
 impl<T: Clone> Push<T> for Vec<T> {
     fn push(&mut self, value: T) {
         Vec::push(self, value)

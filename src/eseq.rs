@@ -298,75 +298,44 @@ impl<O: Push<u8>, const N: usize> Processor<O, N> {
     }
 
     fn sync(&mut self) {
-        if self.dirty {
-            let bg = self.bg.stack.last().copied().unwrap_or_default();
-            let fg = self.fg.stack.last().copied().unwrap_or_default();
-            let flags = self.flags.stack.last().copied().unwrap_or_default();
-            let mut first = true;
-            let mut next = |output: &mut O, done: bool| {
-                if done && !first {
-                    output.extend_from_slice(if done {
-                        END
-                    } else if first {
-                        BEGIN
-                    } else {
-                        NEXT
-                    });
-                    first = false;
-                }
-            };
-            let cache = &mut self.cache;
-            if self.bg.synced != bg {
-                next(&mut self.output, false);
-                self.output
-                    .extend_from_slice(Self::cached(cache, Command::SetBackground(bg)));
-                self.bg.synced = bg;
-            }
-            if self.bg.synced != fg {
-                next(&mut self.output, false);
-                self.output
-                    .extend_from_slice(Self::cached(cache, Command::SetForeground(fg)));
-                self.fg.synced = fg;
-            }
-            if self.flags.synced != flags {
-                next(&mut self.output, false);
-                let diff = self.flags.synced ^ flags;
-                for (f0, f1, set0, set1, reset) in DUAL_SYNC_TABLE {
-                    let actions = dual_flag_sync(diff, flags, *f0, *f1);
-                    if actions.2 {
-                        next(&mut self.output, false);
-                        self.output
-                            .extend_from_slice(Self::cached(cache, (*reset).into()));
-                    }
-                    if actions.0 {
-                        next(&mut self.output, false);
-                        self.output
-                            .extend_from_slice(Self::cached(cache, (*set0).into()));
-                    }
-                    if actions.1 {
-                        next(&mut self.output, false);
-                        self.output
-                            .extend_from_slice(Self::cached(cache, (*set1).into()));
-                    }
-                }
-                for (f, set, reset) in SINGLE_SYNC_TABLE {
-                    if diff.contains(*f) {
-                        next(&mut self.output, false);
-                        self.output.extend_from_slice(Self::cached(
-                            cache,
-                            if flags.contains(*f) { *set } else { *reset }.into(),
-                        ));
-                    }
-                }
-                self.flags.synced = flags;
-            }
-            next(&mut self.output, true);
-            self.dirty = false;
+        if !self.dirty {
+            return;
         }
-    }
 
-    fn cached(cache: &mut HashMap<Command, Vec<u8>>, command: Command) -> &Vec<u8> {
-        cache.entry(command).or_insert_with(|| command.into())
+        let mut csb = CommandSequenceBuilder::new(&mut self.output, &mut self.cache);
+        let bg = self.bg.stack.last().copied().unwrap_or_default();
+        let fg = self.fg.stack.last().copied().unwrap_or_default();
+        let flags = self.flags.stack.last().copied().unwrap_or_default();
+        if self.bg.synced != bg {
+            csb.append(Command::SetBackground(bg));
+            self.bg.synced = bg;
+        }
+        if self.bg.synced != fg {
+            csb.append(Command::SetForeground(fg));
+            self.fg.synced = fg;
+        }
+        if self.flags.synced != flags {
+            let diff = self.flags.synced ^ flags;
+            for (f0, f1, set0, set1, reset) in DUAL_SYNC_TABLE {
+                let actions = dual_flag_sync(diff, flags, *f0, *f1);
+                if actions.2 {
+                    csb.append((*reset).into());
+                }
+                if actions.0 {
+                    csb.append((*set0).into());
+                }
+                if actions.1 {
+                    csb.append((*set1).into());
+                }
+            }
+            for (f, set, reset) in SINGLE_SYNC_TABLE {
+                if diff.contains(*f) {
+                    csb.append(if flags.contains(*f) { *set } else { *reset }.into());
+                }
+            }
+            self.flags.synced = flags;
+        }
+        self.dirty = false;
     }
 }
 
@@ -378,8 +347,7 @@ impl<O: Push<u8>, const N: usize> Push<Instruction> for Processor<O, N> {
                 self.flags = State::default();
                 self.bg = State::default();
                 self.fg = State::default();
-                self.output.extend_from_slice(BEGIN);
-                self.output.extend_from_slice(END);
+                self.output.extend_from_slice(RESET);
             }
             Instruction::PushFlags(flags, operator) => {
                 let mut f = self.flags.stack.last().cloned().unwrap_or_default();
@@ -423,6 +391,46 @@ impl<O: Push<u8>, const N: usize> Push<u8> for Processor<O, N> {
     }
 }
 
+impl<O: Push<u8>, const N: usize> Drop for Processor<O, N> {
+    fn drop(&mut self) {
+        self.output.extend_from_slice(RESET);
+    }
+}
+
+// ---
+
+struct CommandSequenceBuilder<'a, O: Push<u8> + 'a> {
+    output: &'a mut O,
+    cache: &'a mut HashMap<Command, Vec<u8>>,
+    first: bool,
+}
+
+impl<'a, O: Push<u8> + 'a> CommandSequenceBuilder<'a, O> {
+    fn new(output: &'a mut O, cache: &'a mut HashMap<Command, Vec<u8>>) -> Self {
+        Self {
+            output,
+            cache,
+            first: true,
+        }
+    }
+
+    fn append(&mut self, command: Command) {
+        self.output
+            .extend_from_slice(if self.first { BEGIN } else { NEXT });
+        self.first = false;
+        let data = self.cache.entry(command).or_insert_with(|| command.into());
+        self.output.extend_from_slice(data);
+    }
+}
+
+impl<'a, O: Push<u8> + 'a> Drop for CommandSequenceBuilder<'a, O> {
+    fn drop(&mut self) {
+        if !self.first {
+            self.output.extend_from_slice(END);
+        }
+    }
+}
+
 // ---
 
 #[derive(Default)]
@@ -436,6 +444,7 @@ struct State<T: Copy, const N: usize> {
 const BEGIN: &[u8] = b"\x1b[";
 const NEXT: &[u8] = b";";
 const END: &[u8] = b"m";
+const RESET: &[u8] = b"\x1b[m";
 
 const SINGLE_SYNC_TABLE: &[(Flag, CommandCode, CommandCode)] = &[
     (
@@ -618,5 +627,19 @@ mod tests {
             let result = dual_flag_sync(current ^ flags, flags, Flag::Bold, Flag::Faint);
             assert_eq!(result, expected);
         }
+    }
+
+    #[test]
+    fn test_processor() {
+        let mut output = Vec::<u8>::new();
+        let mut processor = Processor::<_, 16>::new(&mut output);
+        processor.push(Instruction::PushForeground(Color::Plain(
+            BasicColor::Green,
+            Brightness::Normal,
+        )));
+        processor.extend_from_slice(b"hello");
+        processor.push(Instruction::PopForeground);
+        drop(processor);
+        assert_eq!(output, b"\x1b[32mhello\x1b[m")
     }
 }
