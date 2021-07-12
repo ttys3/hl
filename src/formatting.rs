@@ -139,21 +139,18 @@ impl RecordFormatter {
                         _ => true,
                     }
                 {
-                    some_fields_hidden |= !self.format_field(buf, styler, k, v, Some(&self.fields));
+                    some_fields_hidden |= !self.format_field(buf, s, k, v, Some(&self.fields));
                 }
             }
             if some_fields_hidden {
-                styler.set(buf, Element::Ellipsis);
-                buf.extend_from_slice(b" ...");
+                s.element(Element::Ellipsis, |s| s.extend_from_slice(b" ..."));
             }
             //
             // caller
             //
             if let Some(text) = rec.caller {
-                styler.set(buf, Element::AtSign);
-                buf.extend_from_slice(b" @ ");
-                styler.set(buf, Element::Caller);
-                buf.extend_from_slice(text.as_bytes());
+                s.element(Element::AtSign, |s| s.extend_from_slice(b" @ "));
+                s.element(Element::Caller, |s| s.extend_from_slice(text.as_bytes()));
             };
         });
         //
