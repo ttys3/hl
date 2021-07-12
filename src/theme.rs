@@ -1,12 +1,25 @@
 use std::collections::HashMap;
 use std::vec::Vec;
 
-use crate::eseq;
+use crate::eseq::{
+    self, BasicColor::*, Brightness, Color, Command, CommandCode, Flag, Flags, Instruction,
+    Operator, ProcessSGR, Sequence,
+};
+use crate::fmtx::Push;
 use crate::settings;
 use crate::types;
 
-use eseq::{BasicColor::*, Brightness, Color, Command, CommandCode, Sequence};
 pub use types::Level;
+
+pub trait StylingPush: Push<u8> {
+    fn element<F: FnOnce(&mut Self)>(&mut self, element: Element, f: F);
+}
+
+impl<S: StylingPush> StylingPush for &mut S {
+    fn element<F: FnOnce(&mut Self)>(&mut self, element: Element, f: F) {
+        StylingPush::element(self, element, f);
+    }
+}
 
 #[repr(u8)]
 pub enum Element {
@@ -30,29 +43,131 @@ pub enum Element {
     Whitespace,
 }
 
-pub type Buf = Vec<u8>;
+// ---
 
-pub struct Styler<'a> {
+pub struct Styler<'a, P: ProcessSGR> {
+    processor: P,
     pack: &'a StylePack,
     current: Option<usize>,
 }
+
+impl<'a, P: ProcessSGR> Styler<'a, P> {
+    pub fn set(&mut self, e: Element) {
+        self.set_style(self.pack.elements[e as usize])
+    }
+
+    fn reset(&mut self) {
+        self.set_style(None)
+    }
+
+    fn set_style(&mut self, style: Option<usize>) {
+        let style = match style {
+            Some(style) => Some(style),
+            None => self.pack.reset,
+        };
+        if let Some(style) = style {
+            if self.current != Some(style) {
+                self.current = Some(style);
+                let style = &self.pack.styles[style];
+                style.apply(self.processor);
+            }
+        }
+    }
+}
+
+impl<'a, P: ProcessSGR> StylingPush for Styler<'a, P> {
+    fn element<F: FnOnce(&mut Self)>(&mut self, element: Element, f: F) {
+        self.set(element);
+        f(self);
+        self.reset();
+    }
+}
+
+impl<'a, P: ProcessSGR> Push<u8> for Styler<'a, P> {
+    fn push(&mut self, data: u8) {
+        Push::<u8>::push(&mut self.processor, data)
+    }
+}
+
+// ---
 
 pub struct Theme {
     packs: HashMap<Level, StylePack>,
     default: StylePack,
 }
 
-#[derive(Clone, Eq, PartialEq)]
-struct Style(Sequence);
+impl Theme {
+    pub fn none() -> Self {
+        Self {
+            packs: HashMap::new(),
+            default: StylePack::none(),
+        }
+    }
+
+    pub fn load(s: &settings::Theme) -> Self {
+        let default = StylePack::load(&s.default);
+        let mut packs = HashMap::new();
+        for (level, pack) in &s.levels {
+            packs.insert(*level, StylePack::load(&s.default.clone().merged(&pack)));
+        }
+        Self { default, packs }
+    }
+
+    pub fn apply<'a, P: ProcessSGR, F: FnOnce(&mut Styler<'a, P>)>(
+        &'a self,
+        processor: P,
+        level: &Option<Level>,
+        f: F,
+    ) {
+        let mut styler = Styler {
+            processor,
+            pack: match level {
+                Some(level) => match self.packs.get(level) {
+                    Some(pack) => pack,
+                    None => &self.default,
+                },
+                None => &self.default,
+            },
+            current: None,
+        };
+        f(&mut styler);
+        styler.reset()
+    }
+}
+
+// ---
+
+#[derive(Clone, Default, Eq, PartialEq)]
+struct Style(eseq::Style);
 
 impl Style {
-    pub fn apply(&self, buf: &mut Buf) {
-        buf.extend_from_slice(self.0.data())
+    pub fn apply<P: ProcessSGR>(&self, processor: P) {
+        if let Some(bg) = self.0.background {
+            Push::<Instruction>::push(&mut processor, Instruction::PushBackground(bg));
+        }
+        if let Some(fg) = self.0.foreground {
+            Push::<Instruction>::push(&mut processor, Instruction::PushForeground(fg));
+        }
+        if let Some((flags, annotations)) = self.0.flags {
+            Push::<Instruction>::push(&mut processor, Instruction::PushFlags(flags, annotations));
+        }
     }
 
-    pub fn reset() -> Self {
-        Sequence::reset().into()
+    pub fn revert<P: ProcessSGR>(&self, processor: P) {
+        if self.0.flags.is_some() {
+            Push::<Instruction>::push(&mut processor, Instruction::PopFlags);
+        }
+        if self.0.foreground.is_some() {
+            Push::<Instruction>::push(&mut processor, Instruction::PopForeground);
+        }
+        if self.0.background.is_some() {
+            Push::<Instruction>::push(&mut processor, Instruction::PopBackground);
+        }
     }
+
+    // pub fn reset() -> Self {
+    //     Sequence::reset().into()
+    // }
 
     fn convert_color(color: &settings::Color) -> Color {
         match color {
@@ -83,86 +198,43 @@ impl Style {
     }
 }
 
-impl<T: Into<Sequence>> From<T> for Style {
-    fn from(value: T) -> Self {
-        Self(value.into())
-    }
-}
+// impl<T: Into<Sequence>> From<T> for Style {
+//     fn from(value: T) -> Self {
+//         Self(value.into())
+//     }
+// }
 
 impl From<&settings::Style> for Style {
     fn from(style: &settings::Style) -> Self {
-        let mut codes = Vec::<Command>::new();
+        let mut flags = Flags::none();
         for mode in &style.modes {
-            codes.push(
-                match mode {
-                    settings::Mode::Bold => CommandCode::SetBold,
-                    settings::Mode::Conceal => CommandCode::SetConcealed,
-                    settings::Mode::CrossedOut => CommandCode::SetCrossedOut,
-                    settings::Mode::Faint => CommandCode::SetFaint,
-                    settings::Mode::Italic => CommandCode::SetItalic,
-                    settings::Mode::RapidBlink => CommandCode::SetRapidBlink,
-                    settings::Mode::Reverse => CommandCode::SetReversed,
-                    settings::Mode::SlowBlink => CommandCode::SetSlowBlink,
-                    settings::Mode::Underline => CommandCode::SetUnderlined,
-                }
-                .into(),
-            );
+            flags |= match mode {
+                settings::Mode::Bold => Flag::Bold,
+                settings::Mode::Conceal => Flag::Concealed,
+                settings::Mode::CrossedOut => Flag::CrossedOut,
+                settings::Mode::Faint => Flag::Faint,
+                settings::Mode::Italic => Flag::Italic,
+                settings::Mode::RapidBlink => Flag::RapidBlink,
+                settings::Mode::Reverse => Flag::Reversed,
+                settings::Mode::SlowBlink => Flag::SlowBlink,
+                settings::Mode::Underline => Flag::Underlined,
+            };
         }
-        if let Some(color) = &style.background {
-            codes.push(Command::SetBackground(Self::convert_color(color)));
-        }
-        if let Some(color) = &style.foreground {
-            codes.push(Command::SetForeground(Self::convert_color(color)));
-        }
-        Self(codes.into())
-    }
-}
-
-impl<'a> Styler<'a> {
-    pub fn set(&mut self, buf: &mut Buf, e: Element) {
-        self.set_style(buf, self.pack.elements[e as usize])
-    }
-
-    fn reset(&mut self, buf: &mut Buf) {
-        self.set_style(buf, None)
-    }
-
-    fn set_style(&mut self, buf: &mut Buf, style: Option<usize>) {
-        let style = match style {
-            Some(style) => Some(style),
-            None => self.pack.reset,
-        };
-        if let Some(style) = style {
-            if self.current != Some(style) {
-                self.current = Some(style);
-                let style = &self.pack.styles[style];
-                style.apply(buf);
-            }
-        }
-    }
-}
-
-impl Theme {
-    pub fn apply<'a, F: FnOnce(&mut Buf, &mut Styler<'a>)>(
-        &'a self,
-        buf: &mut Buf,
-        level: &Option<Level>,
-        f: F,
-    ) {
-        let mut styler = Styler {
-            pack: match level {
-                Some(level) => match self.packs.get(level) {
-                    Some(pack) => pack,
-                    None => &self.default,
-                },
-                None => &self.default,
+        let background = style.background.map(|color| Self::convert_color(&color));
+        let foreground = style.foreground.map(|color| Self::convert_color(&color));
+        Self(eseq::Style {
+            flags: if flags.is_none() {
+                None
+            } else {
+                Some((flags, Operator::Or))
             },
-            current: None,
-        };
-        f(buf, &mut styler);
-        styler.reset(buf)
+            background,
+            foreground,
+        })
     }
 }
+
+// ---
 
 struct StylePack {
     elements: Vec<Option<usize>>,
@@ -173,7 +245,7 @@ struct StylePack {
 impl StylePack {
     fn new() -> Self {
         Self {
-            styles: vec![Style::reset()],
+            styles: vec![Style::default()],
             reset: Some(0),
             elements: vec![None; 255],
         }
@@ -221,23 +293,7 @@ impl StylePack {
     }
 }
 
-impl Theme {
-    pub fn none() -> Self {
-        Self {
-            packs: HashMap::new(),
-            default: StylePack::none(),
-        }
-    }
-
-    pub fn load(s: &settings::Theme) -> Self {
-        let default = StylePack::load(&s.default);
-        let mut packs = HashMap::new();
-        for (level, pack) in &s.levels {
-            packs.insert(*level, StylePack::load(&s.default.clone().merged(&pack)));
-        }
-        Self { default, packs }
-    }
-}
+// ---
 
 #[cfg(test)]
 mod tests {

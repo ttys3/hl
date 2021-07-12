@@ -1,10 +1,14 @@
+// std imports
 use std::sync::Arc;
 
+// third-party imports
 use chrono::prelude::*;
 use json::{de::Read, de::StrRead, value::RawValue};
 use serde_json as json;
 
+// local imports
 use crate::datefmt;
+use crate::eseq::{Cache, Processor};
 use crate::filtering::IncludeExcludeSetting;
 use crate::fmtx;
 use crate::model;
@@ -12,9 +16,19 @@ use crate::theme;
 use crate::IncludeExcludeKeyFilter;
 
 use datefmt::DateTimeFormatter;
-use fmtx::{aligned_left, centered, Counter};
+use fmtx::{aligned_left, centered, Counter, Push};
 use model::Level;
-use theme::{Element, Styler, Theme};
+use theme::{Element, Styler, StylingPush, Theme};
+
+pub trait DirectBufAccess {
+    fn buf_mut(&mut self) -> &mut Vec<u8>;
+}
+
+impl<A: DirectBufAccess> DirectBufAccess for &mut A {
+    fn buf_mut(&mut self) -> &mut Vec<u8> {
+        DirectBufAccess::buf_mut(self)
+    }
+}
 
 pub struct RecordFormatter {
     theme: Arc<Theme>,
@@ -23,6 +37,7 @@ pub struct RecordFormatter {
     ts_width: usize,
     hide_empty_fields: bool,
     fields: Arc<IncludeExcludeKeyFilter>,
+    cache: Cache,
 }
 
 impl RecordFormatter {
@@ -43,6 +58,7 @@ impl RecordFormatter {
             ts_width,
             hide_empty_fields,
             fields,
+            cache: Cache::new(),
         }
     }
 
@@ -52,64 +68,65 @@ impl RecordFormatter {
     }
 
     pub fn format_record(&mut self, buf: &mut Vec<u8>, rec: &model::Record) {
-        self.theme.apply(buf, &rec.level, |buf, styler| {
+        let processor = Processor::new(&mut self.cache, buf);
+        self.theme.apply(processor, &rec.level, |s| {
             //
             // time
             //
-            styler.set(buf, Element::Time);
-            if let Some(ts) = &rec.ts {
-                aligned_left(buf, self.ts_width, b' ', |mut buf| {
-                    if ts
-                        .as_rfc3339()
-                        .and_then(|ts| self.ts_formatter.reformat_rfc3339(&mut buf, ts))
-                        .is_none()
-                    {
-                        if let Some(ts) = ts.parse() {
-                            self.ts_formatter.format(&mut buf, ts);
-                        } else {
-                            buf.extend_from_slice(ts.raw().as_bytes());
+            s.element(Element::Time, |s| {
+                if let Some(ts) = &rec.ts {
+                    aligned_left(s, self.ts_width, b' ', |mut buf| {
+                        if ts
+                            .as_rfc3339()
+                            .and_then(|ts| self.ts_formatter.reformat_rfc3339(s, ts))
+                            .is_none()
+                        {
+                            if let Some(ts) = ts.parse() {
+                                self.ts_formatter.format(&mut buf, ts);
+                            } else {
+                                buf.extend_from_slice(ts.raw().as_bytes());
+                            }
                         }
-                    }
-                });
-            } else {
-                centered(buf, self.ts_width, b' ', |mut buf| {
-                    buf.extend_from_slice(b"---");
-                });
-            }
+                    });
+                } else {
+                    centered(buf, self.ts_width, b' ', |mut buf| {
+                        buf.extend_from_slice(b"---");
+                    });
+                }
+            });
             //
             // level
             //
-            styler.set(buf, Element::Whitespace);
-            buf.push(b' ');
-            styler.set(buf, Element::Delimiter);
-            buf.push(b'|');
-            styler.set(buf, Element::Level);
-            buf.extend_from_slice(match rec.level {
-                Some(Level::Debug) => b"DBG",
-                Some(Level::Info) => b"INF",
-                Some(Level::Warning) => b"WRN",
-                Some(Level::Error) => b"ERR",
-                _ => b"(?)",
+            s.element(Element::Whitespace, |s| s.push(b' '));
+            s.element(Element::Delimiter, |s| s.push(b'|'));
+            s.element(Element::Level, |s| {
+                s.extend_from_slice(match rec.level {
+                    Some(Level::Debug) => b"DBG",
+                    Some(Level::Info) => b"INF",
+                    Some(Level::Warning) => b"WRN",
+                    Some(Level::Error) => b"ERR",
+                    _ => b"(?)",
+                })
             });
-            styler.set(buf, Element::Delimiter);
-            buf.push(b'|');
+            s.element(Element::Delimiter, |s| s.push(b'|'));
             //
             // logger
             //
             if let Some(logger) = rec.logger {
-                styler.set(buf, Element::Whitespace);
-                buf.push(b' ');
-                styler.set(buf, Element::Logger);
-                buf.extend_from_slice(logger.as_bytes());
-                buf.push(b':');
+                s.element(Element::Whitespace, |s| s.push(b' '));
+                s.element(Element::Logger, |s| {
+                    s.extend_from_slice(logger.as_bytes());
+                    s.push(b':');
+                });
             }
             //
             // message text
             //
             if let Some(text) = rec.message {
-                styler.set(buf, Element::Whitespace);
-                buf.push(b' ');
-                self.format_message(buf, styler, text);
+                s.element(Element::Message, |s| {
+                    buf.push(b' ');
+                    self.format_message(s, text);
+                });
             }
             //
             // fields
@@ -145,64 +162,53 @@ impl RecordFormatter {
         buf.push(b'\n');
     }
 
-    fn format_field<'a, 'b: 'a>(
+    fn format_field<S: StylingPush>(
         &self,
-        buf: &'a mut Vec<u8>,
-        styler: &'a mut Styler<'b>,
+        styler: S,
         key: &str,
         value: &RawValue,
         filter: Option<&IncludeExcludeKeyFilter>,
     ) -> bool {
-        let mut fv = FieldFormatter::new(self, buf, styler);
+        let mut fv = FieldFormatter::new(self, styler);
         fv.format(key, value, filter, IncludeExcludeSetting::Unspecified)
     }
 
-    fn format_value<'a, 'b: 'a>(
-        &self,
-        buf: &'a mut Vec<u8>,
-        styler: &'a mut Styler<'b>,
-        value: &RawValue,
-    ) {
-        let mut fv = FieldFormatter::new(self, buf, styler);
+    fn format_value<S: StylingPush>(&self, styler: S, value: &RawValue) {
+        let mut fv = FieldFormatter::new(self, styler);
         fv.format_value(value, None, IncludeExcludeSetting::Unspecified);
     }
 
-    fn format_message<'a, 'b: 'a>(
-        &self,
-        buf: &'a mut Vec<u8>,
-        styler: &'a mut Styler<'b>,
-        value: &RawValue,
-    ) {
+    fn format_message<S: StylingPush + DirectBufAccess>(&self, s: S, value: &RawValue) {
         match value.get().as_bytes()[0] {
             b'"' => {
-                styler.set(buf, Element::Message);
-                format_str_unescaped(buf, value.get());
+                s.element(Element::Message, |s| format_str_unescaped(s, value.get()));
             }
             b'0'..=b'9' | b'-' | b'+' | b'.' => {
-                styler.set(buf, Element::Number);
-                buf.extend_from_slice(value.get().as_bytes());
+                s.element(Element::Number, |s| {
+                    s.extend_from_slice(value.get().as_bytes())
+                });
             }
             b't' | b'f' => {
-                styler.set(buf, Element::Boolean);
-                buf.extend_from_slice(value.get().as_bytes());
+                s.element(Element::Boolean, |s| {
+                    s.extend_from_slice(value.get().as_bytes());
+                });
             }
             b'n' => {
-                styler.set(buf, Element::Null);
-                buf.extend_from_slice(value.get().as_bytes());
+                s.element(Element::Null, |s| {
+                    s.extend_from_slice(value.get().as_bytes());
+                });
             }
             b'{' => {
                 let item = json::from_str::<model::Object>(value.get()).unwrap();
-                styler.set(buf, Element::Brace);
-                buf.push(b'{');
+                s.element(Element::Brace, |s| s.push(b'{'));
                 let mut has_some = false;
                 for (k, v) in item.fields.iter() {
-                    has_some |= self.format_field(buf, styler, k, v, None)
+                    has_some |= self.format_field(s, k, v, None)
                 }
-                styler.set(buf, Element::Brace);
                 if has_some {
-                    buf.push(b' ');
+                    s.push(b' ');
                 }
-                buf.push(b'}');
+                s.element(Element::Brace, |s| s.push(b'}'));
             }
             b'[' => {
                 let item = json::from_str::<model::Array<256>>(value.get()).unwrap();
@@ -210,67 +216,63 @@ impl RecordFormatter {
                     .iter()
                     .map(|&v| {
                         let v = v.get().as_bytes();
-                        only_digits(v) && (v.len() < 3 || (v.len() == 3 && v <= b"255"))
+                        only_digits(v) && (v.len() < 3 || (v.len() == 3 && v <= &b"255"[..]))
                     })
                     .position(|x| x == false)
                     .is_none();
                 if is_byte_string {
-                    styler.set(buf, Element::Quote);
-                    buf.push(b'b');
-                    buf.push(b'\'');
-                    for item in item.iter() {
-                        let b = atoi::atoi::<u8>(item.get().as_bytes()).unwrap();
-                        if b >= 32 {
-                            styler.set(buf, Element::Message);
-                            buf.push(b);
-                        } else {
-                            styler.set(buf, Element::String);
-                            buf.push(b'\\');
-                            buf.push(HEXDIGIT[(b >> 4) as usize]);
-                            buf.push(HEXDIGIT[(b & 0xF) as usize]);
+                    s.element(Element::Quote, |s| s.extend_from_slice(b"b'"));
+                    s.element(Element::Message, |s| {
+                        for item in item.iter() {
+                            let b = atoi::atoi::<u8>(item.get().as_bytes()).unwrap();
+                            if b >= 32 {
+                                s.push(b);
+                            } else {
+                                s.element(Element::String, |s| {
+                                    s.push(b'\\');
+                                    s.push(HEXDIGIT[(b >> 4) as usize]);
+                                    s.push(HEXDIGIT[(b & 0xF) as usize]);
+                                });
+                            }
                         }
-                    }
-                    styler.set(buf, Element::Quote);
-                    buf.push(b'\'');
+                    });
+                    s.element(Element::Quote, |s| s.push(b'\''));
                 } else {
-                    styler.set(buf, Element::Brace);
-                    buf.push(b'[');
+                    s.element(Element::Brace, |s| s.push(b'['));
                     let mut first = true;
                     for v in item.iter() {
                         if !first {
-                            styler.set(buf, Element::Comma);
-                            buf.push(b',');
+                            s.element(Element::Comma, |s| s.push(b','));
                         } else {
                             first = false;
                         }
-                        self.format_value(buf, styler, v);
+                        self.format_value(s, v);
                     }
-                    styler.set(buf, Element::Brace);
-                    buf.push(b']');
+                    s.element(Element::Brace, |s| s.push(b']'));
                 }
             }
             _ => {
-                styler.set(buf, Element::Message);
-                buf.extend_from_slice(value.get().as_bytes());
+                s.element(Element::Message, |s| {
+                    s.extend_from_slice(value.get().as_bytes())
+                });
             }
         };
     }
 }
 
-fn format_str_unescaped(buf: &mut Vec<u8>, s: &str) {
+fn format_str_unescaped<B: Push<u8> + DirectBufAccess>(buf: B, s: &str) {
     let mut reader = StrRead::new(&s[1..]);
-    reader.parse_str_raw(buf).unwrap();
+    reader.parse_str_raw(buf.buf_mut()).unwrap();
 }
 
-struct FieldFormatter<'a, 'b> {
+struct FieldFormatter<'a, S: StylingPush> {
     rf: &'a RecordFormatter,
-    buf: &'a mut Vec<u8>,
-    styler: &'a mut Styler<'b>,
+    styler: S,
 }
 
-impl<'a, 'b> FieldFormatter<'a, 'b> {
-    fn new(rf: &'a RecordFormatter, buf: &'a mut Vec<u8>, styler: &'a mut Styler<'b>) -> Self {
-        Self { rf, buf, styler }
+impl<'a, S: StylingPush> FieldFormatter<'a, S> {
+    fn new(rf: &'a RecordFormatter, styler: S) -> Self {
+        Self { rf, styler }
     }
 
     fn format(
@@ -293,19 +295,20 @@ impl<'a, 'b> FieldFormatter<'a, 'b> {
         if setting == IncludeExcludeSetting::Exclude && leaf {
             return false;
         }
-        self.buf.push(b' ');
-        self.styler.set(self.buf, Element::FieldKey);
-        for b in key.as_bytes() {
-            let b = if *b == b'_' { b'-' } else { *b };
-            self.buf.push(b.to_ascii_lowercase());
-        }
-        self.styler.set(self.buf, Element::EqualSign);
-        self.buf.push(b'=');
+        self.styler.element(Element::Whitespace, |s| s.push(b' '));
+        self.styler.element(Element::FieldKey, |s| {
+            for b in key.as_bytes() {
+                let b = if *b == b'_' { b'-' } else { *b };
+                s.push(b.to_ascii_lowercase());
+            }
+        });
+        self.styler.element(Element::EqualSign, |s| s.push(b'='));
         if self.rf.unescape_fields {
             self.format_value(value, filter, setting);
         } else {
-            self.styler.set(self.buf, Element::String);
-            self.buf.extend_from_slice(value.get().as_bytes())
+            self.styler.element(Element::String, |s| {
+                s.extend_from_slice(value.get().as_bytes())
+            });
         }
         true
     }
@@ -318,12 +321,11 @@ impl<'a, 'b> FieldFormatter<'a, 'b> {
     ) {
         match value.get().as_bytes()[0] {
             b'"' => {
-                self.styler.set(self.buf, Element::Quote);
-                self.buf.push(b'\'');
-                self.styler.set(self.buf, Element::String);
-                format_str_unescaped(self.buf, value.get());
-                self.styler.set(self.buf, Element::Quote);
-                self.buf.push(b'\'');
+                self.styler.element(Element::Quote, |s| s.push(b'\''));
+                self.styler.element(Element::String, |s| {
+                    format_str_unescaped(s, value.get());
+                });
+                self.styler.element(Element::Quote, |s| s.push(b'\''));
             }
             b'0'..=b'9' | b'-' | b'+' | b'.' => {
                 self.styler.set(self.buf, Element::Number);

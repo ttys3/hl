@@ -9,6 +9,25 @@ use crate::fmtx::Push;
 
 // ---
 
+pub trait PushAnnotatedData {
+    fn push(&mut self, data: u8, annotations: Annotations);
+    fn extend_from_slice(&mut self, data: &[u8], annotations: Annotations);
+}
+
+pub trait ProcessSGR: Push<Instruction> + Push<u8> + PushAnnotatedData {}
+
+// ---
+
+bitmask! {
+    #[derive(Debug,Default)]
+    pub mask Annotations: u8 where flags Annotation {
+        UsesForeground = 1 << 0,
+        UsesBackground = 1 << 1,
+    }
+}
+
+// ---
+
 bitmask! {
     #[derive(Debug,Default)]
     pub mask Flags: u16 where flags Flag {
@@ -222,6 +241,15 @@ pub enum Instruction {
 
 // ---
 
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+pub struct Style {
+    pub flags: Option<(Flags, Operator)>,
+    pub background: Option<Color>,
+    pub foreground: Option<Color>,
+}
+
+// ---
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum Operator {
     Set,
@@ -271,24 +299,34 @@ impl From<Vec<Command>> for Sequence {
 
 // ---
 
-pub struct Processor<O: Push<u8>, const N: usize> {
+pub struct Cache(HashMap<Command, Vec<u8>>);
+
+impl Cache {
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+}
+
+// ---
+
+pub struct Processor<'c, O: Push<u8>, const N: usize> {
+    cache: &'c mut Cache,
+    output: O,
     flags: State<Flags, N>,
     bg: State<Color, N>,
     fg: State<Color, N>,
     dirty: bool,
-    cache: HashMap<Command, Vec<u8>>,
-    output: O,
 }
 
-impl<O: Push<u8>, const N: usize> Processor<O, N> {
-    pub fn new(output: O) -> Self {
+impl<'c, O: Push<u8>, const N: usize> Processor<'c, O, N> {
+    pub fn new(cache: &'c mut Cache, output: O) -> Self {
         Self {
+            cache,
+            output,
             flags: State::default(),
             bg: State::default(),
             fg: State::default(),
             dirty: false,
-            cache: HashMap::new(),
-            output,
         }
     }
 
@@ -297,26 +335,32 @@ impl<O: Push<u8>, const N: usize> Processor<O, N> {
         self
     }
 
-    fn sync(&mut self) {
+    fn sync(&mut self, annotations: Annotations) {
         if !self.dirty {
             return;
         }
 
-        let mut csb = CommandSequenceBuilder::new(&mut self.output, &mut self.cache);
+        let mut csb = CommandSequenceBuilder::new(&mut self.output, self.cache);
         let bg = self.bg.stack.last().copied().unwrap_or_default();
         let fg = self.fg.stack.last().copied().unwrap_or_default();
-        let flags = self.flags.stack.last().copied().unwrap_or_default();
-        if self.bg.synced != bg {
+        let mut flags = self.flags.stack.last().copied().unwrap_or_default();
+        if self.bg.synced != bg && annotations.contains(Annotation::UsesBackground) {
             csb.append(Command::SetBackground(bg));
             self.bg.synced = bg;
         }
-        if self.bg.synced != fg {
+        if self.bg.synced != fg && annotations.contains(Annotation::UsesForeground) {
             csb.append(Command::SetForeground(fg));
             self.fg.synced = fg;
         }
         if self.flags.synced != flags {
-            let diff = self.flags.synced ^ flags;
-            for (f0, f1, set0, set1, reset) in DUAL_SYNC_TABLE {
+            self.dirty = false;
+            let mut diff = self.flags.synced ^ flags;
+            for (f0, f1, set0, set1, reset, a) in DUAL_SYNC_TABLE {
+                if !a.intersects(annotations) {
+                    diff.unset(*f0 | *f1);
+                    self.dirty = true;
+                    continue;
+                }
                 let actions = dual_flag_sync(diff, flags, *f0, *f1);
                 if actions.2 {
                     csb.append((*reset).into());
@@ -328,18 +372,23 @@ impl<O: Push<u8>, const N: usize> Processor<O, N> {
                     csb.append((*set1).into());
                 }
             }
-            for (f, set, reset) in SINGLE_SYNC_TABLE {
+            for (f, set, reset, a) in SINGLE_SYNC_TABLE {
+                if !a.intersects(annotations) {
+                    diff.unset(*f);
+                    self.dirty = true;
+                    continue;
+                }
                 if diff.contains(*f) {
                     csb.append(if flags.contains(*f) { *set } else { *reset }.into());
                 }
             }
-            self.flags.synced = flags;
+            self.flags.synced.unset(diff);
+            self.flags.synced.set(flags & diff);
         }
-        self.dirty = false;
     }
 }
 
-impl<O: Push<u8>, const N: usize> Push<Instruction> for Processor<O, N> {
+impl<'c, O: Push<u8>, const N: usize> Push<Instruction> for Processor<'c, O, N> {
     #[inline]
     fn push(&mut self, instruction: Instruction) {
         match instruction {
@@ -378,35 +427,50 @@ impl<O: Push<u8>, const N: usize> Push<Instruction> for Processor<O, N> {
     }
 }
 
-impl<O: Push<u8>, const N: usize> Push<u8> for Processor<O, N> {
+impl<'c, O: Push<u8>, const N: usize> Push<u8> for Processor<'c, O, N> {
     #[inline]
     fn push(&mut self, data: u8) {
-        self.sync();
+        self.sync(Annotations::all());
         self.output.push(data);
     }
     #[inline]
     fn extend_from_slice(&mut self, data: &[u8]) {
-        self.sync();
+        self.sync(Annotations::all());
         self.output.extend_from_slice(data);
     }
 }
 
-impl<O: Push<u8>, const N: usize> Drop for Processor<O, N> {
+impl<'c, O: Push<u8>, const N: usize> PushAnnotatedData for Processor<'c, O, N> {
+    #[inline]
+    fn push(&mut self, data: u8, annotations: Annotations) {
+        self.sync(annotations);
+        self.output.push(data);
+    }
+    #[inline]
+    fn extend_from_slice(&mut self, data: &[u8], annotations: Annotations) {
+        self.sync(annotations);
+        self.output.extend_from_slice(data);
+    }
+}
+
+impl<'c, O: Push<u8>, const N: usize> Drop for Processor<'c, O, N> {
     fn drop(&mut self) {
         self.output.extend_from_slice(RESET);
     }
 }
 
+impl<'c, O: Push<u8>, const N: usize> ProcessSGR for Processor<'c, O, N> {}
+
 // ---
 
 struct CommandSequenceBuilder<'a, O: Push<u8> + 'a> {
     output: &'a mut O,
-    cache: &'a mut HashMap<Command, Vec<u8>>,
+    cache: &'a mut Cache,
     first: bool,
 }
 
 impl<'a, O: Push<u8> + 'a> CommandSequenceBuilder<'a, O> {
-    fn new(output: &'a mut O, cache: &'a mut HashMap<Command, Vec<u8>>) -> Self {
+    fn new(output: &'a mut O, cache: &'a mut Cache) -> Self {
         Self {
             output,
             cache,
@@ -418,7 +482,11 @@ impl<'a, O: Push<u8> + 'a> CommandSequenceBuilder<'a, O> {
         self.output
             .extend_from_slice(if self.first { BEGIN } else { NEXT });
         self.first = false;
-        let data = self.cache.entry(command).or_insert_with(|| command.into());
+        let data = self
+            .cache
+            .0
+            .entry(command)
+            .or_insert_with(|| command.into());
         self.output.extend_from_slice(data);
     }
 }
@@ -446,41 +514,54 @@ const NEXT: &[u8] = b";";
 const END: &[u8] = b"m";
 const RESET: &[u8] = b"\x1b[m";
 
-const SINGLE_SYNC_TABLE: &[(Flag, CommandCode, CommandCode)] = &[
+const SINGLE_SYNC_TABLE: &[(Flag, CommandCode, CommandCode, Annotations)] = &[
     (
         Flag::Italic,
         CommandCode::SetItalic,
         CommandCode::ResetItalic,
+        Annotation::UsesForeground.into(),
     ),
     (
         Flag::Concealed,
         CommandCode::SetConcealed,
         CommandCode::ResetConcealed,
+        Annotation::UsesForeground.into(),
     ),
     (
         Flag::CrossedOut,
         CommandCode::SetCrossedOut,
         CommandCode::ResetCrossedOut,
+        Annotation::UsesForeground.into(),
     ),
     (
         Flag::Reversed,
         CommandCode::SetReversed,
         CommandCode::ResetReversed,
+        Annotations::all(),
     ),
     (
         Flag::Overlined,
         CommandCode::SetOverlined,
         CommandCode::ResetOverlined,
+        Annotation::UsesForeground.into(),
     ),
 ];
 
-const DUAL_SYNC_TABLE: &[(Flag, Flag, CommandCode, CommandCode, CommandCode)] = &[
+const DUAL_SYNC_TABLE: &[(
+    Flag,
+    Flag,
+    CommandCode,
+    CommandCode,
+    CommandCode,
+    Annotations,
+)] = &[
     (
         Flag::Bold,
         Flag::Faint,
         CommandCode::SetBold,
         CommandCode::SetFaint,
         CommandCode::ResetBoldAndFaint,
+        Annotation::UsesForeground.into(),
     ),
     (
         Flag::Underlined,
@@ -488,6 +569,7 @@ const DUAL_SYNC_TABLE: &[(Flag, Flag, CommandCode, CommandCode, CommandCode)] = 
         CommandCode::SetUnderlined,
         CommandCode::SetDoublyUnderlined,
         CommandCode::ResetAllUnderlines,
+        Annotation::UsesForeground.into(),
     ),
     (
         Flag::SlowBlink,
@@ -495,6 +577,7 @@ const DUAL_SYNC_TABLE: &[(Flag, Flag, CommandCode, CommandCode, CommandCode)] = 
         CommandCode::SetSlowBlink,
         CommandCode::SetRapidBlink,
         CommandCode::ResetAllBlinks,
+        Annotations::all(),
     ),
     (
         Flag::Framed,
@@ -502,6 +585,7 @@ const DUAL_SYNC_TABLE: &[(Flag, Flag, CommandCode, CommandCode, CommandCode)] = 
         CommandCode::SetFramed,
         CommandCode::SetEncircled,
         CommandCode::ResetFramedAndEncircled,
+        Annotations::all(),
     ),
     (
         Flag::Subscript,
@@ -509,6 +593,7 @@ const DUAL_SYNC_TABLE: &[(Flag, Flag, CommandCode, CommandCode, CommandCode)] = 
         CommandCode::SetSubscript,
         CommandCode::SetSuperscript,
         CommandCode::ResetSuperscriptAndSubscript,
+        Annotation::UsesForeground.into(),
     ),
 ];
 
