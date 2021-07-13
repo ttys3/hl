@@ -54,7 +54,7 @@ bitmask! {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum CommandCode {
-    ResetAll = 0,
+    // ResetAll = 0,
     SetBold = 1,
     SetFaint = 2,
     SetItalic = 3,
@@ -299,6 +299,7 @@ impl From<Vec<Command>> for Sequence {
 
 // ---
 
+#[derive(Default)]
 pub struct Cache(HashMap<Command, Vec<u8>>);
 
 impl Cache {

@@ -51,6 +51,14 @@ use theme::{Element, StylingPush, Theme};
 
 // ---
 
+#[derive(Default)]
+pub struct RecordFormatterState {
+    cache: Cache,
+    scratch: Vec<u8>,
+}
+
+// ---
+
 pub struct RecordFormatter {
     theme: Arc<Theme>,
     unescape_fields: bool,
@@ -58,8 +66,6 @@ pub struct RecordFormatter {
     ts_width: usize,
     hide_empty_fields: bool,
     fields: Arc<IncludeExcludeKeyFilter>,
-    cache: Cache,
-    scratch: Vec<u8>,
 }
 
 impl RecordFormatter {
@@ -80,8 +86,6 @@ impl RecordFormatter {
             ts_width,
             hide_empty_fields,
             fields,
-            cache: Cache::new(),
-            scratch: Vec::new(),
         }
     }
 
@@ -90,31 +94,36 @@ impl RecordFormatter {
         self
     }
 
-    pub fn format_record(&mut self, buf: &mut Vec<u8>, rec: &model::Record) {
-        let processor = Processor::<_, 16>::new(&mut self.cache, buf);
-        let scratch = &mut self.scratch;
+    pub fn format_record(
+        &mut self,
+        state: &mut RecordFormatterState,
+        buf: &mut Vec<u8>,
+        rec: &model::Record,
+    ) {
+        let mut processor = Processor::<_, 16>::new(&mut state.cache, buf);
+        let scratch = &mut state.scratch;
         self.theme.apply(&mut processor, &rec.level, |s| {
             //
             // time
             //
             s.element(Element::Time, |s| {
                 if let Some(ts) = &rec.ts {
-                    aligned_left(s, self.ts_width, b' ', |mut buf| {
+                    aligned_left(s, self.ts_width, b' ', |mut s| {
                         if ts
                             .as_rfc3339()
-                            .and_then(|ts| self.ts_formatter.reformat_rfc3339(s, ts))
+                            .and_then(|ts| self.ts_formatter.reformat_rfc3339(&mut s, ts))
                             .is_none()
                         {
                             if let Some(ts) = ts.parse() {
-                                self.ts_formatter.format(&mut buf, ts);
+                                self.ts_formatter.format(&mut s, ts);
                             } else {
-                                buf.extend_from_slice(ts.raw().as_bytes());
+                                s.extend_from_slice(ts.raw().as_bytes());
                             }
                         }
                     });
                 } else {
-                    centered(buf, self.ts_width, b' ', |mut buf| {
-                        buf.extend_from_slice(b"---");
+                    centered(s, self.ts_width, b' ', |mut s| {
+                        s.extend_from_slice(b"---");
                     });
                 }
             });
@@ -148,7 +157,7 @@ impl RecordFormatter {
             //
             if let Some(text) = rec.message {
                 s.element(Element::Message, |s| {
-                    buf.push(b' ');
+                    s.push(b' ');
                     self.format_message(s, text, scratch);
                 });
             }
@@ -180,29 +189,24 @@ impl RecordFormatter {
         //
         // eol
         //
-        buf.push(b'\n');
+        processor.push(b'\n');
     }
 
     fn format_field<S: StylingPush>(
         &self,
-        styler: &mut S,
+        s: &mut S,
         key: &str,
         value: &RawValue,
         filter: Option<&IncludeExcludeKeyFilter>,
         scratch: &mut Vec<u8>,
     ) -> bool {
-        let mut fv = FieldFormatter::new(self, styler, scratch);
-        fv.format(key, value, filter, IncludeExcludeSetting::Unspecified)
+        let mut fv = FieldFormatter::new(self, scratch);
+        fv.format(s, key, value, filter, IncludeExcludeSetting::Unspecified)
     }
 
-    fn format_value<S: StylingPush>(
-        &self,
-        styler: &mut S,
-        value: &RawValue,
-        scratch: &mut Vec<u8>,
-    ) {
-        let mut fv = FieldFormatter::new(self, styler, scratch);
-        fv.format_value(value, None, IncludeExcludeSetting::Unspecified);
+    fn format_value<S: StylingPush>(&self, s: &mut S, value: &RawValue, scratch: &mut Vec<u8>) {
+        let mut fv = FieldFormatter::new(self, scratch);
+        fv.format_value(s, value, None, IncludeExcludeSetting::Unspecified);
     }
 
     fn format_message<S: StylingPush>(&self, s: &mut S, value: &RawValue, scratch: &mut Vec<u8>) {
@@ -296,23 +300,19 @@ fn format_str_unescaped<B: Push<u8>>(buf: &mut B, s: &str, scratch: &mut Vec<u8>
     scratch.clear();
 }
 
-struct FieldFormatter<'a, S: StylingPush> {
+struct FieldFormatter<'a> {
     rf: &'a RecordFormatter,
-    styler: &'a mut S,
     scratch: &'a mut Vec<u8>,
 }
 
-impl<'a, S: StylingPush> FieldFormatter<'a, S> {
-    fn new(rf: &'a RecordFormatter, styler: &'a mut S, scratch: &'a mut Vec<u8>) -> Self {
-        Self {
-            rf,
-            styler,
-            scratch,
-        }
+impl<'a> FieldFormatter<'a> {
+    fn new(rf: &'a RecordFormatter, scratch: &'a mut Vec<u8>) -> Self {
+        Self { rf, scratch }
     }
 
-    fn format(
+    fn format<S: StylingPush>(
         &mut self,
+        s: &mut S,
         key: &str,
         value: &'a RawValue,
         filter: Option<&IncludeExcludeKeyFilter>,
@@ -331,85 +331,85 @@ impl<'a, S: StylingPush> FieldFormatter<'a, S> {
         if setting == IncludeExcludeSetting::Exclude && leaf {
             return false;
         }
-        self.styler.element(Element::Whitespace, |s| s.push(b' '));
-        self.styler.element(Element::FieldKey, |s| {
+        s.element(Element::Whitespace, |s| s.push(b' '));
+        s.element(Element::FieldKey, |s| {
             for b in key.as_bytes() {
                 let b = if *b == b'_' { b'-' } else { *b };
                 s.push(b.to_ascii_lowercase());
             }
         });
-        self.styler.element(Element::EqualSign, |s| s.push(b'='));
+        s.element(Element::EqualSign, |s| s.push(b'='));
         if self.rf.unescape_fields {
-            self.format_value(value, filter, setting);
+            self.format_value(s, value, filter, setting);
         } else {
-            self.styler.element(Element::String, |s| {
+            s.element(Element::String, |s| {
                 s.extend_from_slice(value.get().as_bytes())
             });
         }
         true
     }
 
-    fn format_value(
+    fn format_value<S: StylingPush>(
         &mut self,
+        s: &mut S,
         value: &'a RawValue,
         filter: Option<&IncludeExcludeKeyFilter>,
         setting: IncludeExcludeSetting,
     ) {
         match value.get().as_bytes()[0] {
             b'"' => {
-                self.styler.element(Element::Quote, |s| s.push(b'\''));
-                self.styler.element(Element::String, |s| {
+                s.element(Element::Quote, |s| s.push(b'\''));
+                s.element(Element::String, |s| {
                     format_str_unescaped(s, value.get(), self.scratch);
                 });
-                self.styler.element(Element::Quote, |s| s.push(b'\''));
+                s.element(Element::Quote, |s| s.push(b'\''));
             }
             b'0'..=b'9' | b'-' | b'+' | b'.' => {
-                self.styler.element(Element::Number, |s| {
+                s.element(Element::Number, |s| {
                     s.extend_from_slice(value.get().as_bytes())
                 });
             }
             b't' | b'f' => {
-                self.styler.element(Element::Boolean, |s| {
+                s.element(Element::Boolean, |s| {
                     s.extend_from_slice(value.get().as_bytes())
                 });
             }
             b'n' => {
-                self.styler.element(Element::Null, |s| {
+                s.element(Element::Null, |s| {
                     s.extend_from_slice(value.get().as_bytes())
                 });
             }
             b'{' => {
                 let item = json::from_str::<model::Object>(value.get()).unwrap();
-                self.styler.element(Element::Brace, |s| s.push(b'{'));
+                s.element(Element::Brace, |s| s.push(b'{'));
                 let mut some_fields_hidden = false;
                 for (k, v) in item.fields.iter() {
-                    some_fields_hidden |= !self.format(k, v, filter, setting);
+                    some_fields_hidden |= !self.format(s, k, v, filter, setting);
                 }
                 if some_fields_hidden {
-                    self.styler
-                        .element(Element::Ellipsis, |s| s.extend_from_slice(b" ..."));
+                    s.element(Element::Ellipsis, |s| s.extend_from_slice(b" ..."));
                 }
                 if item.fields.len() != 0 {
-                    self.styler.element(Element::Whitespace, |s| s.push(b' '));
+                    s.element(Element::Whitespace, |s| s.push(b' '));
                 }
-                self.styler.element(Element::Brace, |s| s.push(b'}'));
+                s.element(Element::Brace, |s| s.push(b'}'));
             }
             b'[' => {
                 let item = json::from_str::<model::Array<32>>(value.get()).unwrap();
-                self.styler.element(Element::Brace, |s| s.push(b'['));
+                s.element(Element::Brace, |s| s.push(b'['));
                 let mut first = true;
                 for v in item.iter() {
                     if !first {
-                        self.styler.element(Element::Comma, |s| s.push(b','));
+                        s.element(Element::Comma, |s| s.push(b','));
                     } else {
                         first = false;
                     }
-                    self.format_value(v, None, IncludeExcludeSetting::Unspecified);
+                    self.format_value(s, v, None, IncludeExcludeSetting::Unspecified);
                 }
-                self.styler.element(Element::Brace, |s| s.push(b']'));
+                s.element(Element::Brace, |s| s.push(b']'));
             }
             _ => {
-                self.styler.element(Element::String, |s| {
+                s.element(Element::String, |s| {
                     s.extend_from_slice(value.get().as_bytes())
                 });
             }

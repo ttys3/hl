@@ -69,15 +69,15 @@ pub struct Styler<'a, P: ProcessSGR> {
 }
 
 impl<'a, P: ProcessSGR> Styler<'a, P> {
-    pub fn set(&mut self, e: Element) {
+    fn set(&mut self, e: Element) -> Option<Style> {
         self.set_style(self.pack.elements[e as usize])
     }
 
-    fn reset(&mut self) {
-        self.set_style(None)
-    }
+    // fn reset(&mut self) {
+    //     self.set_style(None)
+    // }
 
-    fn set_style(&mut self, style: Option<usize>) {
+    fn set_style(&mut self, style: Option<usize>) -> Option<Style> {
         let style = match style {
             Some(style) => Some(style),
             None => self.pack.reset,
@@ -87,16 +87,18 @@ impl<'a, P: ProcessSGR> Styler<'a, P> {
                 self.current = Some(style);
                 let style = &self.pack.styles[style];
                 style.apply(self.processor);
+                return Some(style.clone());
             }
         }
+        None
     }
 }
 
 impl<'a, P: ProcessSGR + 'a> StylingPush for Styler<'a, P> {
     fn element<F: FnOnce(&mut Self)>(&mut self, element: Element, f: F) {
-        self.set(element);
+        let style = self.set(element);
         f(self);
-        self.reset();
+        style.map(|style| style.revert(self.processor));
     }
 }
 
@@ -148,7 +150,7 @@ impl Theme {
             current: None,
         };
         f(&mut styler);
-        styler.reset()
+        // styler.reset()
     }
 }
 

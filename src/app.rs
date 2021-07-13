@@ -11,7 +11,7 @@ use serde_json as json;
 
 use crate::datefmt::{DateTimeFormat, DateTimeFormatter};
 use crate::error::*;
-use crate::formatting::RecordFormatter;
+use crate::formatting::{RecordFormatter, RecordFormatterState};
 use crate::model::{Filter, Parser, ParserSettings, RawRecord};
 use crate::scanning::{BufFactory, Scanner, Segment, SegmentBuf, SegmentBufFactory};
 use crate::settings::Fields;
@@ -92,11 +92,12 @@ impl App {
                         self.options.fields.filter.clone(),
                     )
                     .with_field_unescaping(!self.options.raw_fields);
+                    let mut state = RecordFormatterState::default();
                     for segment in rxi.iter() {
                         match segment {
                             Segment::Complete(segment) => {
                                 let mut buf = bfo.new_buf();
-                                self.process_segement(&parser, &segment, &mut formatter, &mut buf, self.options.filter.is_empty());
+                                self.process_segement(&parser, &segment, &mut formatter, &mut state, &mut buf, self.options.filter.is_empty());
                                 sfi.recycle(segment);
                                 if let Err(_) = txo.send(buf) {
                                     break;
@@ -143,6 +144,7 @@ impl App {
         parser: &Parser,
         segment: &SegmentBuf,
         formatter: &mut RecordFormatter,
+        state: &mut RecordFormatterState,
         buf: &mut Vec<u8>,
         include_unparsed: bool,
     ) {
@@ -157,7 +159,7 @@ impl App {
                 some = true;
                 let record = parser.parse(record);
                 if record.matches(&self.options.filter) {
-                    formatter.format_record(buf, &record);
+                    formatter.format_record(state, buf, &record);
                 }
             }
             let remainder = if some {
