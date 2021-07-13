@@ -309,7 +309,7 @@ impl Cache {
 
 // ---
 
-pub struct Processor<'c, O: Push<u8>, const N: usize> {
+pub struct Processor<'c, O: Push<u8> + 'c, const N: usize> {
     cache: &'c mut Cache,
     output: O,
     flags: State<Flags, N>,
@@ -318,7 +318,7 @@ pub struct Processor<'c, O: Push<u8>, const N: usize> {
     dirty: bool,
 }
 
-impl<'c, O: Push<u8>, const N: usize> Processor<'c, O, N> {
+impl<'c, O: Push<u8> + 'c, const N: usize> Processor<'c, O, N> {
     pub fn new(cache: &'c mut Cache, output: O) -> Self {
         Self {
             cache,
@@ -388,7 +388,7 @@ impl<'c, O: Push<u8>, const N: usize> Processor<'c, O, N> {
     }
 }
 
-impl<'c, O: Push<u8>, const N: usize> Push<Instruction> for Processor<'c, O, N> {
+impl<'c, O: Push<u8> + 'c, const N: usize> Push<Instruction> for Processor<'c, O, N> {
     #[inline]
     fn push(&mut self, instruction: Instruction) {
         match instruction {
@@ -427,7 +427,7 @@ impl<'c, O: Push<u8>, const N: usize> Push<Instruction> for Processor<'c, O, N> 
     }
 }
 
-impl<'c, O: Push<u8>, const N: usize> Push<u8> for Processor<'c, O, N> {
+impl<'c, O: Push<u8> + 'c, const N: usize> Push<u8> for Processor<'c, O, N> {
     #[inline]
     fn push(&mut self, data: u8) {
         self.sync(Annotations::all());
@@ -440,7 +440,7 @@ impl<'c, O: Push<u8>, const N: usize> Push<u8> for Processor<'c, O, N> {
     }
 }
 
-impl<'c, O: Push<u8>, const N: usize> PushAnnotatedData for Processor<'c, O, N> {
+impl<'c, O: Push<u8> + 'c, const N: usize> PushAnnotatedData for Processor<'c, O, N> {
     #[inline]
     fn push(&mut self, data: u8, annotations: Annotations) {
         self.sync(annotations);
@@ -453,13 +453,13 @@ impl<'c, O: Push<u8>, const N: usize> PushAnnotatedData for Processor<'c, O, N> 
     }
 }
 
-impl<'c, O: Push<u8>, const N: usize> Drop for Processor<'c, O, N> {
+impl<'c, O: Push<u8> + 'c, const N: usize> Drop for Processor<'c, O, N> {
     fn drop(&mut self) {
         self.output.extend_from_slice(RESET);
     }
 }
 
-impl<'c, O: Push<u8>, const N: usize> ProcessSGR for Processor<'c, O, N> {}
+impl<'c, O: Push<u8> + 'c, const N: usize> ProcessSGR for Processor<'c, O, N> {}
 
 // ---
 
