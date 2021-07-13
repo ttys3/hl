@@ -91,7 +91,7 @@ impl RecordFormatter {
     }
 
     pub fn format_record(&mut self, buf: &mut Vec<u8>, rec: &model::Record) {
-        let processor = Processor::new(&mut self.cache, buf);
+        let processor = Processor::<_, 16>::new(&mut self.cache, buf);
         self.theme.apply(processor, &rec.level, |s| {
             //
             // time
