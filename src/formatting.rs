@@ -20,15 +20,36 @@ use fmtx::{aligned_left, centered, Counter, Push};
 use model::Level;
 use theme::{Element, Styler, StylingPush, Theme};
 
+// ---
+
 pub trait DirectBufAccess {
     fn buf_mut(&mut self) -> &mut Vec<u8>;
 }
 
-impl<A: DirectBufAccess> DirectBufAccess for &mut A {
-    fn buf_mut(&mut self) -> &mut Vec<u8> {
-        DirectBufAccess::buf_mut(self)
-    }
+// impl<A: DirectBufAccess> DirectBufAccess for &mut A {
+//     fn buf_mut(&mut self) -> &mut Vec<u8> {
+//         DirectBufAccess::buf_mut(self)
+//     }
+// }
+
+// ---
+
+pub trait StylingPushWithDirectBufAccess: StylingPush + DirectBufAccess {
+    fn element<F: FnOnce(&mut Self)>(&mut self, element: Element, f: F);
 }
+
+// impl<S: StylingPushWithDirectBufAccess> StylingPushWithDirectBufAccess for &mut S {
+//     fn element<F: FnOnce(&mut Self)>(&mut self, element: Element, f: F) {
+//         StylingPush::element(self, element, f);
+//     }
+// }
+
+// impl<S: StylingPushWithDirectBufAccess> StylingPush for S {}
+// impl<S: StylingPushWithDirectBufAccess> StylingPush for &mut S {}
+// impl<S: StylingPushWithDirectBufAccess> DirectBufAccess for S {}
+// impl<S: StylingPushWithDirectBufAccess> DirectBufAccess for &mut S {}
+
+// ---
 
 pub struct RecordFormatter {
     theme: Arc<Theme>,

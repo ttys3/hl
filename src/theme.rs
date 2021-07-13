@@ -11,6 +11,8 @@ use crate::types;
 
 pub use types::Level;
 
+// ---
+
 pub trait StylingPush: Push<u8> {
     fn element<F: FnOnce(&mut Self)>(&mut self, element: Element, f: F);
 }
@@ -20,6 +22,20 @@ impl<S: StylingPush> StylingPush for &mut S {
         StylingPush::element(self, element, f);
     }
 }
+
+// ---
+
+pub trait DirectBufAccess {
+    fn buf_mut(&mut self) -> &mut Vec<u8>;
+}
+
+// impl<A: DirectBufAccess> DirectBufAccess for &mut A {
+//     fn buf_mut(&mut self) -> &mut Vec<u8> {
+//         DirectBufAccess::buf_mut(self)
+//     }
+// }
+
+// ---
 
 #[repr(u8)]
 pub enum Element {
