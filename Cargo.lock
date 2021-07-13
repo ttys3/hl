@@ -573,6 +573,7 @@ dependencies = [
  "anyhow",
  "atoi",
  "atty",
+ "bitflags",
  "bitmask",
  "bytefmt",
  "chrono",

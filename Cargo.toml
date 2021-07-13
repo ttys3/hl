@@ -15,6 +15,7 @@ anyhow = "1"
 atoi = "0"
 atty = "0"
 bitmask = "0"
+bitflags = "1"
 bytefmt = "0"
 chrono = { version = "0", features = ["serde"] }
 chrono-tz = { version = "0", features = ["serde"] }

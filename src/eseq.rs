@@ -2,6 +2,7 @@
 use std::{collections::HashMap, io::Write};
 
 // third-party imports
+use bitflags::bitflags;
 use bitmask::bitmask;
 
 // local imports
@@ -18,11 +19,10 @@ pub trait ProcessSGR: Push<Instruction> + Push<u8> + PushAnnotatedData {}
 
 // ---
 
-bitmask! {
-    #[derive(Debug,Default)]
-    pub mask Annotations: u8 where flags Annotation {
-        UsesForeground = 1 << 0,
-        UsesBackground = 1 << 1,
+bitflags! {
+    pub struct Annotations: u8 {
+        const UsesForeground = 1 << 0;
+        const UsesBackground = 1 << 1;
     }
 }
 
@@ -343,12 +343,12 @@ impl<'c, O: Push<u8> + 'c, const N: usize> Processor<'c, O, N> {
         let mut csb = CommandSequenceBuilder::new(&mut self.output, self.cache);
         let bg = self.bg.stack.last().copied().unwrap_or_default();
         let fg = self.fg.stack.last().copied().unwrap_or_default();
-        let mut flags = self.flags.stack.last().copied().unwrap_or_default();
-        if self.bg.synced != bg && annotations.contains(Annotation::UsesBackground) {
+        let flags = self.flags.stack.last().copied().unwrap_or_default();
+        if self.bg.synced != bg && annotations.contains(Annotations::UsesBackground) {
             csb.append(Command::SetBackground(bg));
             self.bg.synced = bg;
         }
-        if self.bg.synced != fg && annotations.contains(Annotation::UsesForeground) {
+        if self.bg.synced != fg && annotations.contains(Annotations::UsesForeground) {
             csb.append(Command::SetForeground(fg));
             self.fg.synced = fg;
         }
@@ -519,19 +519,19 @@ const SINGLE_SYNC_TABLE: &[(Flag, CommandCode, CommandCode, Annotations)] = &[
         Flag::Italic,
         CommandCode::SetItalic,
         CommandCode::ResetItalic,
-        Annotation::UsesForeground.into(),
+        Annotations::UsesForeground,
     ),
     (
         Flag::Concealed,
         CommandCode::SetConcealed,
         CommandCode::ResetConcealed,
-        Annotation::UsesForeground.into(),
+        Annotations::UsesForeground,
     ),
     (
         Flag::CrossedOut,
         CommandCode::SetCrossedOut,
         CommandCode::ResetCrossedOut,
-        Annotation::UsesForeground.into(),
+        Annotations::UsesForeground,
     ),
     (
         Flag::Reversed,
@@ -543,7 +543,7 @@ const SINGLE_SYNC_TABLE: &[(Flag, CommandCode, CommandCode, Annotations)] = &[
         Flag::Overlined,
         CommandCode::SetOverlined,
         CommandCode::ResetOverlined,
-        Annotation::UsesForeground.into(),
+        Annotations::UsesForeground,
     ),
 ];
 
@@ -561,7 +561,7 @@ const DUAL_SYNC_TABLE: &[(
         CommandCode::SetBold,
         CommandCode::SetFaint,
         CommandCode::ResetBoldAndFaint,
-        Annotation::UsesForeground.into(),
+        Annotations::UsesForeground,
     ),
     (
         Flag::Underlined,
@@ -569,7 +569,7 @@ const DUAL_SYNC_TABLE: &[(
         CommandCode::SetUnderlined,
         CommandCode::SetDoublyUnderlined,
         CommandCode::ResetAllUnderlines,
-        Annotation::UsesForeground.into(),
+        Annotations::UsesForeground,
     ),
     (
         Flag::SlowBlink,
@@ -593,7 +593,7 @@ const DUAL_SYNC_TABLE: &[(
         CommandCode::SetSubscript,
         CommandCode::SetSuperscript,
         CommandCode::ResetSuperscriptAndSubscript,
-        Annotation::UsesForeground.into(),
+        Annotations::UsesForeground,
     ),
 ];
 
@@ -717,7 +717,8 @@ mod tests {
     #[test]
     fn test_processor() {
         let mut output = Vec::<u8>::new();
-        let mut processor = Processor::<_, 16>::new(&mut output);
+        let mut cache = Cache::new();
+        let mut processor = Processor::<_, 16>::new(&mut cache, &mut output);
         processor.push(Instruction::PushForeground(Color::Plain(
             BasicColor::Green,
             Brightness::Normal,

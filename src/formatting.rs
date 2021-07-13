@@ -18,7 +18,7 @@ use crate::IncludeExcludeKeyFilter;
 use datefmt::DateTimeFormatter;
 use fmtx::{aligned_left, centered, Counter, Push};
 use model::Level;
-use theme::{Element, Styler, StylingPush, Theme};
+use theme::{Element, StylingPush, Theme};
 
 // ---
 
@@ -92,7 +92,8 @@ impl RecordFormatter {
 
     pub fn format_record(&mut self, buf: &mut Vec<u8>, rec: &model::Record) {
         let processor = Processor::<_, 16>::new(&mut self.cache, buf);
-        self.theme.apply(processor, &rec.level, |s| {
+        let scratch = &mut self.scratch;
+        self.theme.apply(&mut processor, &rec.level, |s| {
             //
             // time
             //
@@ -148,7 +149,7 @@ impl RecordFormatter {
             if let Some(text) = rec.message {
                 s.element(Element::Message, |s| {
                     buf.push(b' ');
-                    self.format_message(s, text);
+                    self.format_message(s, text, scratch);
                 });
             }
             //
@@ -162,7 +163,7 @@ impl RecordFormatter {
                         _ => true,
                     }
                 {
-                    some_fields_hidden |= !self.format_field(s, k, v, Some(&self.fields));
+                    some_fields_hidden |= !self.format_field(s, k, v, Some(&self.fields), scratch);
                 }
             }
             if some_fields_hidden {
@@ -183,26 +184,32 @@ impl RecordFormatter {
     }
 
     fn format_field<S: StylingPush>(
-        &mut self,
-        styler: S,
+        &self,
+        styler: &mut S,
         key: &str,
         value: &RawValue,
         filter: Option<&IncludeExcludeKeyFilter>,
+        scratch: &mut Vec<u8>,
     ) -> bool {
-        let mut fv = FieldFormatter::new(self, styler);
+        let mut fv = FieldFormatter::new(self, styler, scratch);
         fv.format(key, value, filter, IncludeExcludeSetting::Unspecified)
     }
 
-    fn format_value<S: StylingPush>(&mut self, styler: S, value: &RawValue) {
-        let mut fv = FieldFormatter::new(self, styler);
+    fn format_value<S: StylingPush>(
+        &self,
+        styler: &mut S,
+        value: &RawValue,
+        scratch: &mut Vec<u8>,
+    ) {
+        let mut fv = FieldFormatter::new(self, styler, scratch);
         fv.format_value(value, None, IncludeExcludeSetting::Unspecified);
     }
 
-    fn format_message<S: StylingPush>(&mut self, s: S, value: &RawValue) {
+    fn format_message<S: StylingPush>(&self, s: &mut S, value: &RawValue, scratch: &mut Vec<u8>) {
         match value.get().as_bytes()[0] {
             b'"' => {
                 s.element(Element::Message, |s| {
-                    self.format_str_unescaped(s, value.get())
+                    format_str_unescaped(s, value.get(), scratch)
                 });
             }
             b'0'..=b'9' | b'-' | b'+' | b'.' => {
@@ -225,7 +232,7 @@ impl RecordFormatter {
                 s.element(Element::Brace, |s| s.push(b'{'));
                 let mut has_some = false;
                 for (k, v) in item.fields.iter() {
-                    has_some |= self.format_field(s, k, v, None)
+                    has_some |= self.format_field(s, k, v, None, scratch)
                 }
                 if has_some {
                     s.push(b' ');
@@ -268,7 +275,7 @@ impl RecordFormatter {
                         } else {
                             first = false;
                         }
-                        self.format_value(s, v);
+                        self.format_value(s, v, scratch);
                     }
                     s.element(Element::Brace, |s| s.push(b']'));
                 }
@@ -280,23 +287,28 @@ impl RecordFormatter {
             }
         };
     }
+}
 
-    fn format_str_unescaped<B: Push<u8>>(&mut self, buf: B, s: &str) {
-        let mut reader = StrRead::new(&s[1..]);
-        reader.parse_str_raw(&mut self.scratch).unwrap();
-        buf.extend_from_slice(&self.scratch);
-        self.scratch.clear();
-    }
+fn format_str_unescaped<B: Push<u8>>(buf: &mut B, s: &str, scratch: &mut Vec<u8>) {
+    let mut reader = StrRead::new(&s[1..]);
+    reader.parse_str_raw(scratch).unwrap();
+    buf.extend_from_slice(scratch);
+    scratch.clear();
 }
 
 struct FieldFormatter<'a, S: StylingPush> {
-    rf: &'a mut RecordFormatter,
-    styler: S,
+    rf: &'a RecordFormatter,
+    styler: &'a mut S,
+    scratch: &'a mut Vec<u8>,
 }
 
 impl<'a, S: StylingPush> FieldFormatter<'a, S> {
-    fn new(rf: &'a mut RecordFormatter, styler: S) -> Self {
-        Self { rf, styler }
+    fn new(rf: &'a RecordFormatter, styler: &'a mut S, scratch: &'a mut Vec<u8>) -> Self {
+        Self {
+            rf,
+            styler,
+            scratch,
+        }
     }
 
     fn format(
@@ -347,7 +359,7 @@ impl<'a, S: StylingPush> FieldFormatter<'a, S> {
             b'"' => {
                 self.styler.element(Element::Quote, |s| s.push(b'\''));
                 self.styler.element(Element::String, |s| {
-                    self.rf.format_str_unescaped(s, value.get());
+                    format_str_unescaped(s, value.get(), self.scratch);
                 });
                 self.styler.element(Element::Quote, |s| s.push(b'\''));
             }
@@ -378,8 +390,7 @@ impl<'a, S: StylingPush> FieldFormatter<'a, S> {
                         .element(Element::Ellipsis, |s| s.extend_from_slice(b" ..."));
                 }
                 if item.fields.len() != 0 {
-                    self.styler
-                        .element(Element::Whitespace, |s| self.styler.push(b' '));
+                    self.styler.element(Element::Whitespace, |s| s.push(b' '));
                 }
                 self.styler.element(Element::Brace, |s| s.push(b'}'));
             }

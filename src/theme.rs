@@ -1,9 +1,9 @@
+use std::clone::Clone;
 use std::collections::HashMap;
 use std::vec::Vec;
 
 use crate::eseq::{
-    self, BasicColor::*, Brightness, Color, Command, CommandCode, Flag, Flags, Instruction,
-    Operator, ProcessSGR, Sequence,
+    self, BasicColor::*, Brightness, Color, Flag, Flags, Instruction, Operator, ProcessSGR,
 };
 use crate::fmtx::Push;
 use crate::settings;
@@ -17,11 +17,12 @@ pub trait StylingPush: Push<u8> {
     fn element<F: FnOnce(&mut Self)>(&mut self, element: Element, f: F);
 }
 
-impl<S: StylingPush> StylingPush for &mut S {
-    fn element<F: FnOnce(&mut Self)>(&mut self, element: Element, f: F) {
-        StylingPush::element(self, element, f);
-    }
-}
+// impl<S: StylingPush> StylingPush for &S {
+//     type Next = S;
+//     fn element<F: FnOnce(Self::Next)>(self, element: Element, f: F) {
+//         StylingPush::element(*self, element, |s| f(&s));
+//     }
+// }
 
 // ---
 
@@ -62,7 +63,7 @@ pub enum Element {
 // ---
 
 pub struct Styler<'a, P: ProcessSGR> {
-    processor: P,
+    processor: &'a mut P,
     pack: &'a StylePack,
     current: Option<usize>,
 }
@@ -91,7 +92,7 @@ impl<'a, P: ProcessSGR> Styler<'a, P> {
     }
 }
 
-impl<'a, P: ProcessSGR> StylingPush for Styler<'a, P> {
+impl<'a, P: ProcessSGR + 'a> StylingPush for Styler<'a, P> {
     fn element<F: FnOnce(&mut Self)>(&mut self, element: Element, f: F) {
         self.set(element);
         f(self);
@@ -99,9 +100,9 @@ impl<'a, P: ProcessSGR> StylingPush for Styler<'a, P> {
     }
 }
 
-impl<'a, P: ProcessSGR> Push<u8> for Styler<'a, P> {
+impl<'a, P: ProcessSGR + 'a> Push<u8> for Styler<'a, P> {
     fn push(&mut self, data: u8) {
-        Push::<u8>::push(&mut self.processor, data)
+        Push::<u8>::push(self.processor, data)
     }
 }
 
@@ -129,9 +130,9 @@ impl Theme {
         Self { default, packs }
     }
 
-    pub fn apply<'a, P: ProcessSGR, F: FnOnce(&mut Styler<'a, P>)>(
+    pub fn apply<'a, P: ProcessSGR + 'a, F: FnOnce(&mut Styler<'a, P>)>(
         &'a self,
-        processor: P,
+        processor: &'a mut P,
         level: &Option<Level>,
         f: F,
     ) {
@@ -157,27 +158,27 @@ impl Theme {
 struct Style(eseq::Style);
 
 impl Style {
-    pub fn apply<P: ProcessSGR>(&self, processor: P) {
+    pub fn apply<P: ProcessSGR>(&self, processor: &mut P) {
         if let Some(bg) = self.0.background {
-            Push::<Instruction>::push(&mut processor, Instruction::PushBackground(bg));
+            Push::<Instruction>::push(processor, Instruction::PushBackground(bg));
         }
         if let Some(fg) = self.0.foreground {
-            Push::<Instruction>::push(&mut processor, Instruction::PushForeground(fg));
+            Push::<Instruction>::push(processor, Instruction::PushForeground(fg));
         }
         if let Some((flags, annotations)) = self.0.flags {
-            Push::<Instruction>::push(&mut processor, Instruction::PushFlags(flags, annotations));
+            Push::<Instruction>::push(processor, Instruction::PushFlags(flags, annotations));
         }
     }
 
-    pub fn revert<P: ProcessSGR>(&self, processor: P) {
+    pub fn revert<P: ProcessSGR>(&self, processor: &mut P) {
         if self.0.flags.is_some() {
-            Push::<Instruction>::push(&mut processor, Instruction::PopFlags);
+            Push::<Instruction>::push(processor, Instruction::PopFlags);
         }
         if self.0.foreground.is_some() {
-            Push::<Instruction>::push(&mut processor, Instruction::PopForeground);
+            Push::<Instruction>::push(processor, Instruction::PopForeground);
         }
         if self.0.background.is_some() {
-            Push::<Instruction>::push(&mut processor, Instruction::PopBackground);
+            Push::<Instruction>::push(processor, Instruction::PopBackground);
         }
     }
 

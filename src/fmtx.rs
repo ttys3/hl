@@ -11,15 +11,15 @@ pub trait Push<T: Clone> {
     }
 }
 
-// impl<T: Clone> Push<T> for &mut Vec<T> {
-//     fn push(&mut self, value: T) {
-//         Vec::push(self, value)
-//     }
+impl<T: Clone> Push<T> for &mut Vec<T> {
+    fn push(&mut self, value: T) {
+        Vec::push(self, value)
+    }
 
-//     fn extend_from_slice(&mut self, values: &[T]) {
-//         Vec::extend_from_slice(self, values)
-//     }
-// }
+    fn extend_from_slice(&mut self, values: &[T]) {
+        Vec::extend_from_slice(self, values)
+    }
+}
 
 impl<T: Clone> Push<T> for Vec<T> {
     fn push(&mut self, value: T) {
@@ -31,15 +31,15 @@ impl<T: Clone> Push<T> for Vec<T> {
     }
 }
 
-impl<T: Clone, P: Push<T>> Push<T> for &mut P {
-    fn push(&mut self, value: T) {
-        Push::<T>::push(self, value)
-    }
+// impl<T: Clone, P: Push<T>> Push<T> for &mut P {
+//     fn push(&mut self, value: T) {
+//         Push::<T>::push(self, value)
+//     }
 
-    fn extend_from_slice(&mut self, values: &[T]) {
-        Push::<T>::extend_from_slice(self, values)
-    }
-}
+//     fn extend_from_slice(&mut self, values: &[T]) {
+//         Push::<T>::extend_from_slice(self, values)
+//     }
+// }
 
 // ---
 
