@@ -253,7 +253,7 @@ pub enum Instruction {
 
 // ---
 
-#[derive(Clone, Copy, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Style {
     pub flags: Option<(Flags, Operator)>,
     pub background: Option<Color>,
@@ -262,7 +262,7 @@ pub struct Style {
 
 // ---
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Operator {
     Set,
     And,
@@ -352,10 +352,12 @@ impl<'c, O: Push<u8> + 'c, const N: usize> Processor<'c, O, N> {
         let bg = self.bg.stack.last().copied().unwrap_or_default();
         let fg = self.fg.stack.last().copied().unwrap_or_default();
         let flags = self.flags.stack.last().copied().unwrap_or_default();
+        // println!("bg={:?} synced={:?}", bg, self.bg.synced);
         if self.bg.synced != bg && annotations.contains(Annotations::UsesBackground) {
             csb.append(Command::SetBackground(bg));
             self.bg.synced = bg;
         }
+        // println!("fg={:?} synced={:?}", fg, self.fg.synced);
         if self.fg.synced != fg && annotations.contains(Annotations::UsesForeground) {
             csb.append(Command::SetForeground(fg));
             self.fg.synced = fg;
@@ -459,9 +461,11 @@ impl<'c, O: Push<u8> + 'c, const N: usize> ProcessSGR for Processor<'c, O, N> {
                 self.soil().bg.stack.pop().unwrap();
             }
             Instruction::PushForeground(color) => {
+                // println!("PushForeground {:?}", color);
                 self.soil().fg.stack.push(color).unwrap();
             }
             Instruction::PopForeground => {
+                // println!("PopForeground");
                 self.soil().fg.stack.pop().unwrap();
             }
         }
@@ -488,6 +492,7 @@ impl<'a, O: Push<u8> + 'a> CommandSequenceBuilder<'a, O> {
 
     #[inline]
     fn append(&mut self, command: Command) {
+        // println!("BEGIN or NEXT: {:?}", command);
         self.output
             .extend_from_slice(if self.first { BEGIN } else { NEXT });
         self.first = false;
@@ -504,6 +509,7 @@ impl<'a, O: Push<u8> + 'a> Drop for CommandSequenceBuilder<'a, O> {
     #[inline]
     fn drop(&mut self) {
         if !self.first {
+            // println!("END");
             self.output.extend_from_slice(END);
         }
     }

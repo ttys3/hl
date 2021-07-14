@@ -182,8 +182,11 @@ impl RecordFormatter {
             // caller
             //
             if let Some(text) = rec.caller {
+                // println!("P1");
                 s.element(Element::AtSign, |s| s.extend_from_slice(b" @ "));
+                // println!("P2");
                 s.element(Element::Caller, |s| s.extend_from_slice(text.as_bytes()));
+                // println!("P3");
             };
         });
         //

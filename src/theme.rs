@@ -39,6 +39,7 @@ pub trait DirectBufAccess {
 // ---
 
 #[repr(u8)]
+#[derive(Clone, Copy, Debug)]
 pub enum Element {
     Time,
     Level,
@@ -65,7 +66,7 @@ pub enum Element {
 pub struct Styler<'a, P: ProcessSGR> {
     processor: &'a mut P,
     pack: &'a StylePack,
-    current: Option<usize>,
+    // current: Option<usize>,
 }
 
 impl<'a, P: ProcessSGR> Styler<'a, P> {
@@ -85,12 +86,12 @@ impl<'a, P: ProcessSGR> Styler<'a, P> {
             None => self.pack.reset,
         };
         if let Some(style) = style {
-            if self.current != Some(style) {
-                self.current = Some(style);
-                let style = &self.pack.styles[style];
-                style.apply(self.processor);
-                return Some(style.clone());
-            }
+            // if self.current != Some(style) {
+            //     self.current = Some(style);
+            let style = &self.pack.styles[style];
+            style.apply(self.processor);
+            return Some(style.clone());
+            // }
         }
         None
     }
@@ -100,6 +101,7 @@ impl<'a, P: ProcessSGR + 'a> StylingPush for Styler<'a, P> {
     #[inline(always)]
     fn element<F: FnOnce(&mut Self)>(&mut self, element: Element, f: F) {
         let style = self.set(element);
+        // println!("element: {:?} style: {:?}", element, style);
         f(self);
         style.map(|style| style.revert(self.processor));
     }
@@ -155,7 +157,7 @@ impl Theme {
                 },
                 None => &self.default,
             },
-            current: None,
+            // current: None,
         };
         f(&mut styler);
         // styler.reset()
@@ -164,7 +166,7 @@ impl Theme {
 
 // ---
 
-#[derive(Clone, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Style(eseq::Style);
 
 impl Style {
@@ -317,7 +319,7 @@ impl StylePack {
         result.add(Element::Message, &Style::from(&s.message));
         result.add(Element::Quote, &Style::from(&s.quote));
         result.add(Element::Time, &Style::from(&s.time));
-        result.add(Element::Whitespace, &Style::from(&s.time));
+        result.add(Element::Whitespace, &Style::from(&s.whitespace));
         result
     }
 }
