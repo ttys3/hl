@@ -160,27 +160,29 @@ impl Theme {
 struct Style(eseq::Style);
 
 impl Style {
+    #[inline(always)]
     pub fn apply<P: ProcessSGR>(&self, processor: &mut P) {
         if let Some(bg) = self.0.background {
-            Push::<Instruction>::push(processor, Instruction::PushBackground(bg));
+            processor.push_instruction(Instruction::PushBackground(bg));
         }
         if let Some(fg) = self.0.foreground {
-            Push::<Instruction>::push(processor, Instruction::PushForeground(fg));
+            processor.push_instruction(Instruction::PushForeground(fg));
         }
         if let Some((flags, annotations)) = self.0.flags {
-            Push::<Instruction>::push(processor, Instruction::PushFlags(flags, annotations));
+            processor.push_instruction(Instruction::PushFlags(flags, annotations));
         }
     }
 
+    #[inline(always)]
     pub fn revert<P: ProcessSGR>(&self, processor: &mut P) {
         if self.0.flags.is_some() {
-            Push::<Instruction>::push(processor, Instruction::PopFlags);
+            processor.push_instruction(Instruction::PopFlags);
         }
         if self.0.foreground.is_some() {
-            Push::<Instruction>::push(processor, Instruction::PopForeground);
+            processor.push_instruction(Instruction::PopForeground);
         }
         if self.0.background.is_some() {
-            Push::<Instruction>::push(processor, Instruction::PopBackground);
+            processor.push_instruction(Instruction::PopBackground);
         }
     }
 
@@ -317,13 +319,16 @@ impl StylePack {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::eseq::{Cache, Processor};
 
     #[test]
     fn test_theme() {
         let theme = Theme::none();
         let mut buf = Vec::new();
-        theme.apply(&mut buf, &Some(Level::Debug), |buf, styler| {
-            styler.set(buf, Element::Message);
+        let mut cache = Cache::default();
+        let mut processor = Processor::<_, 16>::new(&mut cache, &mut buf);
+        theme.apply(&mut processor, &Some(Level::Debug), |s| {
+            s.element(Element::Message, |s| s.extend_from_slice(b"hello!"));
         });
     }
 }

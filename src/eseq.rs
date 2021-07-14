@@ -11,11 +11,13 @@ use crate::fmtx::Push;
 // ---
 
 pub trait PushAnnotatedData {
-    fn push(&mut self, data: u8, annotations: Annotations);
-    fn extend_from_slice(&mut self, data: &[u8], annotations: Annotations);
+    fn push_annotated(&mut self, data: u8, annotations: Annotations);
+    fn extend_from_slice_annotated(&mut self, data: &[u8], annotations: Annotations);
 }
 
-pub trait ProcessSGR: Push<Instruction> + Push<u8> + PushAnnotatedData {}
+pub trait ProcessSGR: Push<u8> + PushAnnotatedData {
+    fn push_instruction(&mut self, instruction: Instruction);
+}
 
 // ---
 
@@ -302,12 +304,6 @@ impl From<Vec<Command>> for Sequence {
 #[derive(Default)]
 pub struct Cache(HashMap<Command, Vec<u8>>);
 
-impl Cache {
-    pub fn new() -> Self {
-        Self(HashMap::new())
-    }
-}
-
 // ---
 
 pub struct Processor<'c, O: Push<u8> + 'c, const N: usize> {
@@ -389,9 +385,42 @@ impl<'c, O: Push<u8> + 'c, const N: usize> Processor<'c, O, N> {
     }
 }
 
-impl<'c, O: Push<u8> + 'c, const N: usize> Push<Instruction> for Processor<'c, O, N> {
+impl<'c, O: Push<u8> + 'c, const N: usize> Push<u8> for Processor<'c, O, N> {
     #[inline]
-    fn push(&mut self, instruction: Instruction) {
+    fn push(&mut self, data: u8) {
+        self.sync(Annotations::all());
+        self.output.push(data);
+    }
+    #[inline]
+    fn extend_from_slice(&mut self, data: &[u8]) {
+        self.sync(Annotations::all());
+        self.output.extend_from_slice(data);
+    }
+}
+
+impl<'c, O: Push<u8> + 'c, const N: usize> PushAnnotatedData for Processor<'c, O, N> {
+    #[inline]
+    fn push_annotated(&mut self, data: u8, annotations: Annotations) {
+        self.sync(annotations);
+        self.output.push(data);
+    }
+    #[inline]
+    fn extend_from_slice_annotated(&mut self, data: &[u8], annotations: Annotations) {
+        self.sync(annotations);
+        self.output.extend_from_slice(data);
+    }
+}
+
+impl<'c, O: Push<u8> + 'c, const N: usize> Drop for Processor<'c, O, N> {
+    #[inline]
+    fn drop(&mut self) {
+        self.output.extend_from_slice(RESET);
+    }
+}
+
+impl<'c, O: Push<u8> + 'c, const N: usize> ProcessSGR for Processor<'c, O, N> {
+    #[inline]
+    fn push_instruction(&mut self, instruction: Instruction) {
         match instruction {
             Instruction::ResetAll => {
                 self.flags = State::default();
@@ -428,40 +457,6 @@ impl<'c, O: Push<u8> + 'c, const N: usize> Push<Instruction> for Processor<'c, O
     }
 }
 
-impl<'c, O: Push<u8> + 'c, const N: usize> Push<u8> for Processor<'c, O, N> {
-    #[inline]
-    fn push(&mut self, data: u8) {
-        self.sync(Annotations::all());
-        self.output.push(data);
-    }
-    #[inline]
-    fn extend_from_slice(&mut self, data: &[u8]) {
-        self.sync(Annotations::all());
-        self.output.extend_from_slice(data);
-    }
-}
-
-impl<'c, O: Push<u8> + 'c, const N: usize> PushAnnotatedData for Processor<'c, O, N> {
-    #[inline]
-    fn push(&mut self, data: u8, annotations: Annotations) {
-        self.sync(annotations);
-        self.output.push(data);
-    }
-    #[inline]
-    fn extend_from_slice(&mut self, data: &[u8], annotations: Annotations) {
-        self.sync(annotations);
-        self.output.extend_from_slice(data);
-    }
-}
-
-impl<'c, O: Push<u8> + 'c, const N: usize> Drop for Processor<'c, O, N> {
-    fn drop(&mut self) {
-        self.output.extend_from_slice(RESET);
-    }
-}
-
-impl<'c, O: Push<u8> + 'c, const N: usize> ProcessSGR for Processor<'c, O, N> {}
-
 // ---
 
 struct CommandSequenceBuilder<'a, O: Push<u8> + 'a> {
@@ -471,6 +466,7 @@ struct CommandSequenceBuilder<'a, O: Push<u8> + 'a> {
 }
 
 impl<'a, O: Push<u8> + 'a> CommandSequenceBuilder<'a, O> {
+    #[inline]
     fn new(output: &'a mut O, cache: &'a mut Cache) -> Self {
         Self {
             output,
@@ -479,6 +475,7 @@ impl<'a, O: Push<u8> + 'a> CommandSequenceBuilder<'a, O> {
         }
     }
 
+    #[inline]
     fn append(&mut self, command: Command) {
         self.output
             .extend_from_slice(if self.first { BEGIN } else { NEXT });
@@ -493,6 +490,7 @@ impl<'a, O: Push<u8> + 'a> CommandSequenceBuilder<'a, O> {
 }
 
 impl<'a, O: Push<u8> + 'a> Drop for CommandSequenceBuilder<'a, O> {
+    #[inline]
     fn drop(&mut self) {
         if !self.first {
             self.output.extend_from_slice(END);
@@ -718,15 +716,22 @@ mod tests {
     #[test]
     fn test_processor() {
         let mut output = Vec::<u8>::new();
-        let mut cache = Cache::new();
+        let mut cache = Cache::default();
         let mut processor = Processor::<_, 16>::new(&mut cache, &mut output);
-        processor.push(Instruction::PushForeground(Color::Plain(
+        processor.push_instruction(Instruction::PushForeground(Color::Plain(
             BasicColor::Green,
             Brightness::Normal,
         )));
         processor.extend_from_slice(b"hello");
-        processor.push(Instruction::PopForeground);
+        processor.push(b',');
+        processor.push(b' ');
+        processor.push_instruction(Instruction::PushForeground(Color::Plain(
+            BasicColor::Green,
+            Brightness::Normal,
+        )));
+        processor.extend_from_slice(b"world");
+        processor.push_instruction(Instruction::PopForeground);
         drop(processor);
-        assert_eq!(output, b"\x1b[32mhello\x1b[m")
+        assert_eq!(output, b"\x1b[32mhello, world\x1b[m")
     }
 }

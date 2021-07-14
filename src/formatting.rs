@@ -295,8 +295,9 @@ impl RecordFormatter {
 
 fn format_str_unescaped<B: Push<u8>>(buf: &mut B, s: &str, scratch: &mut Vec<u8>) {
     let mut reader = StrRead::new(&s[1..]);
+    scratch.push(b' ');
     reader.parse_str_raw(scratch).unwrap();
-    buf.extend_from_slice(scratch);
+    buf.extend_from_slice(&scratch[1..]);
     scratch.clear();
 }
 
