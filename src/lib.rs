@@ -2,6 +2,7 @@
 pub mod app;
 pub mod datefmt;
 pub mod error;
+pub mod eseq;
 pub mod fmtx;
 pub mod input;
 pub mod output;
@@ -13,7 +14,6 @@ pub mod types;
 
 // private modules
 mod console;
-mod eseq;
 mod filtering;
 mod formatting;
 mod model;
