@@ -345,7 +345,7 @@ impl<'c, O: Push<u8> + 'c, const N: usize> Processor<'c, O, N> {
             csb.append(Command::SetBackground(bg));
             self.bg.synced = bg;
         }
-        if self.bg.synced != fg && annotations.contains(Annotations::UsesForeground) {
+        if self.fg.synced != fg && annotations.contains(Annotations::UsesForeground) {
             csb.append(Command::SetForeground(fg));
             self.fg.synced = fg;
         }
@@ -730,6 +730,7 @@ mod tests {
             Brightness::Normal,
         )));
         processor.extend_from_slice(b"world");
+        processor.push_instruction(Instruction::PopForeground);
         processor.push_instruction(Instruction::PopForeground);
         drop(processor);
         assert_eq!(output, b"\x1b[32mhello, world\x1b[m")
