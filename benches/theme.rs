@@ -7,7 +7,7 @@ use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
 
 // local imports
 use hl::{
-    eseq::{Cache, Processor},
+    eseq::{Cache, Processor, ProcessorState},
     fmtx::Push,
     settings::{self, Color, Mode, Style, StylePack},
     theme::{Element, StylingPush, Theme},
@@ -129,9 +129,10 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut n1 = 0;
     c.bench_function("theme", |b| {
         let reg = Region::new(&GLOBAL);
+        let mut state = ProcessorState::<16>::default();
         b.iter(|| {
             buf.clear();
-            let mut processor = Processor::<_, 16>::new(&mut cache, &mut buf);
+            let mut processor = Processor::new(&mut cache, &mut state, &mut buf);
             theme.apply(&mut processor, &Some(Level::Debug), |s| {
                 s.element(Element::Time, |s| {
                     s.extend_from_slice(b"2020-01-01 00:00:00")

@@ -167,6 +167,7 @@ impl ParserSettings {
         }
     }
 
+    #[inline]
     fn apply<'a>(
         &self,
         key: &'a str,
@@ -197,6 +198,7 @@ impl ParserSettings {
         };
     }
 
+    #[inline]
     fn apply_each<'a, 'i, I>(&self, items: I, to: &mut Record<'a>)
     where
         I: IntoIterator<Item = &'i (&'a str, &'a RawValue)>,
@@ -293,10 +295,11 @@ pub struct Parser<'s> {
 }
 
 impl<'s> Parser<'s> {
+    #[inline]
     pub fn new(settings: &'s ParserSettings) -> Self {
         Self { settings }
     }
-
+    #[inline]
     pub fn parse<'a>(&self, record: RawRecord<'a>) -> Record<'a> {
         let fields = record.fields();
         let count = fields.size_hint().1.unwrap_or(0);

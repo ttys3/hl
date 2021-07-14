@@ -189,6 +189,7 @@ impl Color {
 }
 
 impl Default for Color {
+    #[inline(always)]
     fn default() -> Self {
         Self::Default
     }
@@ -314,61 +315,66 @@ impl From<Vec<Command>> for Sequence {
 #[derive(Default)]
 pub struct Cache(HashMap<Command, Vec<u8>>);
 
-// ---
-
-pub struct Processor<'c, O: Push<u8> + 'c, const N: usize> {
-    cache: &'c mut Cache,
-    output: O,
+#[derive(Default)]
+pub struct ProcessorState<const N: usize> {
     flags: State<Flags, N>,
     bg: State<Color, N>,
     fg: State<Color, N>,
     dirty: bool,
 }
 
+// ---
+
+pub struct Processor<'c, O: Push<u8> + 'c, const N: usize> {
+    cache: &'c mut Cache,
+    state: &'c mut ProcessorState<N>,
+    output: O,
+}
+
 impl<'c, O: Push<u8> + 'c, const N: usize> Processor<'c, O, N> {
-    pub fn new(cache: &'c mut Cache, output: O) -> Self {
+    pub fn new(cache: &'c mut Cache, state: &'c mut ProcessorState<N>, output: O) -> Self {
         Self {
             cache,
+            state,
             output,
-            flags: State::default(),
-            bg: State::default(),
-            fg: State::default(),
-            dirty: false,
         }
     }
 
     #[inline(always)]
     fn soil(&mut self) -> &mut Self {
-        self.dirty = true;
+        self.state.dirty = true;
         self
     }
 
+    #[inline(always)]
     fn sync(&mut self, annotations: Annotations) {
-        if !self.dirty {
-            return;
+        if self.state.dirty {
+            self.do_sync(annotations)
         }
+    }
 
+    fn do_sync(&mut self, annotations: Annotations) {
         let mut csb = CommandSequenceBuilder::new(&mut self.output, self.cache);
-        let bg = self.bg.stack.last().copied().unwrap_or_default();
-        let fg = self.fg.stack.last().copied().unwrap_or_default();
-        let flags = self.flags.stack.last().copied().unwrap_or_default();
+        let bg = self.state.bg.stack.last().copied().unwrap_or_default();
+        let fg = self.state.fg.stack.last().copied().unwrap_or_default();
+        let flags = self.state.flags.stack.last().copied().unwrap_or_default();
         // println!("bg={:?} synced={:?}", bg, self.bg.synced);
-        if self.bg.synced != bg && annotations.contains(Annotations::UsesBackground) {
+        if self.state.bg.synced != bg && annotations.contains(Annotations::UsesBackground) {
             csb.append(Command::SetBackground(bg));
-            self.bg.synced = bg;
+            self.state.bg.synced = bg;
         }
         // println!("fg={:?} synced={:?}", fg, self.fg.synced);
-        if self.fg.synced != fg && annotations.contains(Annotations::UsesForeground) {
+        if self.state.fg.synced != fg && annotations.contains(Annotations::UsesForeground) {
             csb.append(Command::SetForeground(fg));
-            self.fg.synced = fg;
+            self.state.fg.synced = fg;
         }
-        if self.flags.synced != flags {
-            self.dirty = false;
-            let mut diff = self.flags.synced ^ flags;
+        if self.state.flags.synced != flags {
+            self.state.dirty = false;
+            let mut diff = self.state.flags.synced ^ flags;
             for (f0, f1, set0, set1, reset, a) in DUAL_SYNC_TABLE {
                 if !a.intersects(annotations) {
                     diff.unset(*f0 | *f1);
-                    self.dirty = true;
+                    self.state.dirty = true;
                     continue;
                 }
                 let actions = dual_flag_sync(diff, flags, *f0, *f1);
@@ -385,15 +391,15 @@ impl<'c, O: Push<u8> + 'c, const N: usize> Processor<'c, O, N> {
             for (f, set, reset, a) in SINGLE_SYNC_TABLE {
                 if !a.intersects(annotations) {
                     diff.unset(*f);
-                    self.dirty = true;
+                    self.state.dirty = true;
                     continue;
                 }
                 if diff.contains(*f) {
                     csb.append(if flags.contains(*f) { *set } else { *reset }.into());
                 }
             }
-            self.flags.synced.unset(diff);
-            self.flags.synced.set(flags & diff);
+            self.state.flags.synced.unset(diff);
+            self.state.flags.synced.set(flags & diff);
         }
     }
 }
@@ -436,37 +442,37 @@ impl<'c, O: Push<u8> + 'c, const N: usize> ProcessSGR for Processor<'c, O, N> {
     fn push_instruction(&mut self, instruction: Instruction) {
         match instruction {
             Instruction::ResetAll => {
-                self.flags = State::default();
-                self.bg = State::default();
-                self.fg = State::default();
+                self.state.flags = State::default();
+                self.state.bg = State::default();
+                self.state.fg = State::default();
                 self.output.extend_from_slice(RESET);
             }
             Instruction::PushFlags(flags, operator) => {
-                let mut f = self.flags.stack.last().cloned().unwrap_or_default();
+                let mut f = self.state.flags.stack.last().cloned().unwrap_or_default();
                 match operator {
                     Operator::Set => f = flags,
                     Operator::And => f &= flags,
                     Operator::Or => f |= flags,
                     Operator::Xor => f ^= flags,
                 };
-                self.soil().flags.stack.push(f).unwrap();
+                self.soil().state.flags.stack.push(f).unwrap();
             }
             Instruction::PopFlags => {
-                self.soil().flags.stack.pop().unwrap();
+                self.soil().state.flags.stack.pop().unwrap();
             }
             Instruction::PushBackground(color) => {
-                self.soil().bg.stack.push(color).unwrap();
+                self.soil().state.bg.stack.push(color).unwrap();
             }
             Instruction::PopBackground => {
-                self.soil().bg.stack.pop().unwrap();
+                self.soil().state.bg.stack.pop().unwrap();
             }
             Instruction::PushForeground(color) => {
                 // println!("PushForeground {:?}", color);
-                self.soil().fg.stack.push(color).unwrap();
+                self.soil().state.fg.stack.push(color).unwrap();
             }
             Instruction::PopForeground => {
                 // println!("PopForeground");
-                self.soil().fg.stack.pop().unwrap();
+                self.soil().state.fg.stack.pop().unwrap();
             }
         }
     }

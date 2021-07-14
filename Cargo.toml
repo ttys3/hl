@@ -62,7 +62,13 @@ regex = "1"
 wildmatch = "2"
 
 [profile.release]
-debug = false
+debug = true
+opt-level = 3
+codegen-units = 1
+lto = true
+
+[profile.bench]
+debug = true
 opt-level = 3
 codegen-units = 1
 lto = true
