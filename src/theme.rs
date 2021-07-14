@@ -69,6 +69,7 @@ pub struct Styler<'a, P: ProcessSGR> {
 }
 
 impl<'a, P: ProcessSGR> Styler<'a, P> {
+    #[inline(always)]
     fn set(&mut self, e: Element) -> Option<Style> {
         self.set_style(self.pack.elements[e as usize])
     }
@@ -77,6 +78,7 @@ impl<'a, P: ProcessSGR> Styler<'a, P> {
     //     self.set_style(None)
     // }
 
+    #[inline]
     fn set_style(&mut self, style: Option<usize>) -> Option<Style> {
         let style = match style {
             Some(style) => Some(style),
@@ -95,6 +97,7 @@ impl<'a, P: ProcessSGR> Styler<'a, P> {
 }
 
 impl<'a, P: ProcessSGR + 'a> StylingPush for Styler<'a, P> {
+    #[inline(always)]
     fn element<F: FnOnce(&mut Self)>(&mut self, element: Element, f: F) {
         let style = self.set(element);
         f(self);
@@ -103,8 +106,13 @@ impl<'a, P: ProcessSGR + 'a> StylingPush for Styler<'a, P> {
 }
 
 impl<'a, P: ProcessSGR + 'a> Push<u8> for Styler<'a, P> {
+    #[inline(always)]
     fn push(&mut self, data: u8) {
-        Push::<u8>::push(self.processor, data)
+        self.processor.push(data)
+    }
+    #[inline(always)]
+    fn extend_from_slice(&mut self, data: &[u8]) {
+        self.processor.extend_from_slice(data)
     }
 }
 

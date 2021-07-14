@@ -114,14 +114,17 @@ pub enum BasicColor {
 }
 
 impl BasicColor {
+    #[inline(always)]
     pub fn bright(self) -> PlainColor {
         PlainColor(self, Brightness::Bright)
     }
 
+    #[inline(always)]
     pub fn fg(self) -> (Instruction, Instruction) {
         Color::Plain(self, Brightness::Normal).fg()
     }
 
+    #[inline(always)]
     pub fn bg(self) -> (Instruction, Instruction) {
         Color::Plain(self, Brightness::Normal).bg()
     }
@@ -136,10 +139,12 @@ impl BasicColor {
 pub struct PlainColor(BasicColor, Brightness);
 
 impl PlainColor {
+    #[inline(always)]
     pub fn fg(self) -> (Instruction, Instruction) {
         Color::Plain(self.0, self.1).fg()
     }
 
+    #[inline(always)]
     pub fn bg(self) -> (Instruction, Instruction) {
         Color::Plain(self.0, self.1).bg()
     }
@@ -156,6 +161,7 @@ pub enum Color {
 }
 
 impl Color {
+    #[inline(always)]
     pub fn fg(self) -> (Instruction, Instruction) {
         (
             Instruction::PushForeground(self),
@@ -163,6 +169,7 @@ impl Color {
         )
     }
 
+    #[inline(always)]
     pub fn bg(self) -> (Instruction, Instruction) {
         (
             Instruction::PushBackground(self),
@@ -205,6 +212,7 @@ pub enum Command {
 }
 
 impl Command {
+    #[inline(always)]
     fn render(&self, buf: &mut Vec<u8>) {
         match self {
             Self::Plain(code) => code.render(buf),
@@ -215,12 +223,14 @@ impl Command {
 }
 
 impl From<CommandCode> for Command {
+    #[inline(always)]
     fn from(code: CommandCode) -> Self {
         Self::Plain(code)
     }
 }
 
 impl Into<Vec<u8>> for Command {
+    #[inline(always)]
     fn into(self) -> Vec<u8> {
         let mut result = Vec::new();
         self.render(&mut result);
@@ -327,6 +337,7 @@ impl<'c, O: Push<u8> + 'c, const N: usize> Processor<'c, O, N> {
         }
     }
 
+    #[inline(always)]
     fn soil(&mut self) -> &mut Self {
         self.dirty = true;
         self
