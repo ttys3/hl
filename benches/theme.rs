@@ -7,7 +7,7 @@ use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
 
 // local imports
 use hl::{
-    eseq::{Processor, ProcessorState},
+    eseq::{Processor, ProcessorState, Render},
     fmtx::Push,
     settings::{self, Color, Mode, Style, StylePack},
     theme::{Element, StylingPush, Theme},
@@ -125,6 +125,14 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut buf = Vec::with_capacity(8192);
     let mut c1 = None;
     let mut n1 = 0;
+
+    c.bench_function("color", |b| {
+        let color = hl::eseq::Color::Palette(246).foreground();
+        b.iter(|| {
+            buf.clear();
+            color.render(&mut buf);
+        });
+    });
     c.bench_function("theme", |b| {
         let reg = Region::new(&GLOBAL);
         let mut state = ProcessorState::<16>::default();

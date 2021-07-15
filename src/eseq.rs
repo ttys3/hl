@@ -16,6 +16,10 @@ pub trait ProcessSGR: Push<u8> + PushAnnotatedData {
     fn push_instruction(&mut self, instruction: Instruction);
 }
 
+pub trait Render {
+    fn render<B: Push<u8>>(&self, buf: &mut B);
+}
+
 // ---
 
 bitflags! {
@@ -89,7 +93,7 @@ pub enum CommandCode {
     SetFirstBrightBackgroundColor = 100,
 }
 
-impl CommandCode {
+impl Render for CommandCode {
     fn render<B: Push<u8>>(&self, buf: &mut B) {
         buf.extend_from_slice(btoa(*self as u8))
     }
@@ -149,6 +153,38 @@ impl PlainColor {
 
 // ---
 
+pub struct Background(Color);
+
+impl Render for Background {
+    fn render<B: Push<u8>>(&self, buf: &mut B) {
+        self.0.render(buf, CommandCode::SetFirstBackgroundColor)
+    }
+}
+
+impl From<Color> for Background {
+    fn from(color: Color) -> Background {
+        Background(color)
+    }
+}
+
+// ---
+
+pub struct Foreground(Color);
+
+impl Render for Foreground {
+    fn render<B: Push<u8>>(&self, buf: &mut B) {
+        self.0.render(buf, CommandCode::SetFirstForegroundColor)
+    }
+}
+
+impl From<Color> for Foreground {
+    fn from(color: Color) -> Foreground {
+        Foreground(color)
+    }
+}
+
+// ---
+
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum Color {
@@ -159,6 +195,16 @@ pub enum Color {
 }
 
 impl Color {
+    #[inline(always)]
+    pub fn foreground(self) -> Foreground {
+        Foreground(self)
+    }
+
+    #[inline(always)]
+    pub fn background(self) -> Background {
+        Background(self)
+    }
+
     #[inline(always)]
     pub fn fg(self) -> (Instruction, Instruction) {
         (
@@ -175,7 +221,8 @@ impl Color {
         )
     }
 
-    fn render<B: Push<u8>>(&self, buf: &mut B, base: u8) {
+    fn render<B: Push<u8>>(&self, buf: &mut B, base: CommandCode) {
+        let base = base as u8;
         match self {
             Self::Default => buf.extend_from_slice(btoa(base + 9)),
             Self::Plain(color, Brightness::Normal) => color.render(buf, base),
@@ -227,13 +274,13 @@ pub enum Command {
     SetForeground(Color),
 }
 
-impl Command {
+impl Render for Command {
     #[inline(always)]
     fn render<B: Push<u8>>(&self, buf: &mut B) {
         match self {
             Self::Plain(code) => code.render(buf),
-            Self::SetBackground(command) => command.render(buf, 40),
-            Self::SetForeground(command) => command.render(buf, 30),
+            Self::SetBackground(color) => Background::from(*color).render(buf),
+            Self::SetForeground(color) => Foreground::from(*color).render(buf),
         }
     }
 }
