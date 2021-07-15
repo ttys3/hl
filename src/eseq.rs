@@ -1,12 +1,9 @@
-// std imports
-use std::{collections::HashMap, io::Write};
-
 // third-party imports
 use bitflags::bitflags;
 use bitmask::bitmask;
 
 // local imports
-use crate::fmtx::Push;
+use crate::{btoa::btoa, fmtx::Push};
 
 // ---
 
@@ -93,8 +90,8 @@ pub enum CommandCode {
 }
 
 impl CommandCode {
-    fn render(&self, buf: &mut Vec<u8>) {
-        write!(buf, "{}", (*self as u8)).unwrap()
+    fn render<B: Push<u8>>(&self, buf: &mut B) {
+        buf.extend_from_slice(btoa(*self as u8))
     }
 }
 
@@ -129,8 +126,8 @@ impl BasicColor {
         Color::Plain(self, Brightness::Normal).bg()
     }
 
-    fn render(&self, buf: &mut Vec<u8>, base: u8) {
-        write!(buf, "{}", base + (*self as u8)).unwrap()
+    fn render<B: Push<u8>>(&self, buf: &mut B, base: u8) {
+        buf.extend_from_slice(btoa(base + (*self as u8)))
     }
 }
 
@@ -152,6 +149,7 @@ impl PlainColor {
 
 // ---
 
+#[repr(u32)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum Color {
     Default,
@@ -177,13 +175,29 @@ impl Color {
         )
     }
 
-    fn render(&self, buf: &mut Vec<u8>, base: u8) {
+    fn render<B: Push<u8>>(&self, buf: &mut B, base: u8) {
         match self {
-            Self::Default => write!(buf, "{}", base + 9).unwrap(),
+            Self::Default => buf.extend_from_slice(btoa(base + 9)),
             Self::Plain(color, Brightness::Normal) => color.render(buf, base),
             Self::Plain(color, Brightness::Bright) => color.render(buf, base + 60),
-            Self::Palette(color) => write!(buf, "{};5;{}", base + 8, color).unwrap(),
-            Self::RGB(r, g, b) => write!(buf, "{};2;{};{};{}", base + 8, r, g, b).unwrap(),
+            Self::Palette(color) => {
+                buf.extend_from_slice(btoa(base + 8));
+                buf.push(b';');
+                buf.push(b'5');
+                buf.push(b';');
+                buf.extend_from_slice(btoa(*color));
+            }
+            Self::RGB(r, g, b) => {
+                buf.extend_from_slice(btoa(base + 8));
+                buf.push(b';');
+                buf.push(b'2');
+                buf.push(b';');
+                buf.extend_from_slice(btoa(*r));
+                buf.push(b';');
+                buf.extend_from_slice(btoa(*g));
+                buf.push(b';');
+                buf.extend_from_slice(btoa(*b));
+            }
         }
     }
 }
@@ -197,6 +211,7 @@ impl Default for Color {
 
 // ---
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum Brightness {
     Normal,
@@ -214,7 +229,7 @@ pub enum Command {
 
 impl Command {
     #[inline(always)]
-    fn render(&self, buf: &mut Vec<u8>) {
+    fn render<B: Push<u8>>(&self, buf: &mut B) {
         match self {
             Self::Plain(code) => code.render(buf),
             Self::SetBackground(command) => command.render(buf, 40),
@@ -313,9 +328,6 @@ impl From<Vec<Command>> for Sequence {
 // ---
 
 #[derive(Default)]
-pub struct Cache(HashMap<Command, Vec<u8>>);
-
-#[derive(Default)]
 pub struct ProcessorState<const N: usize> {
     flags: State<Flags, N>,
     bg: State<Color, N>,
@@ -326,18 +338,13 @@ pub struct ProcessorState<const N: usize> {
 // ---
 
 pub struct Processor<'c, O: Push<u8> + 'c, const N: usize> {
-    cache: &'c mut Cache,
     state: &'c mut ProcessorState<N>,
     output: O,
 }
 
 impl<'c, O: Push<u8> + 'c, const N: usize> Processor<'c, O, N> {
-    pub fn new(cache: &'c mut Cache, state: &'c mut ProcessorState<N>, output: O) -> Self {
-        Self {
-            cache,
-            state,
-            output,
-        }
+    pub fn new(state: &'c mut ProcessorState<N>, output: O) -> Self {
+        Self { state, output }
     }
 
     #[inline(always)]
@@ -354,7 +361,7 @@ impl<'c, O: Push<u8> + 'c, const N: usize> Processor<'c, O, N> {
     }
 
     fn do_sync(&mut self, annotations: Annotations) {
-        let mut csb = CommandSequenceBuilder::new(&mut self.output, self.cache);
+        let mut csb = CommandSequenceBuilder::new(&mut self.output);
         let bg = self.state.bg.stack.last().copied().unwrap_or_default();
         let fg = self.state.fg.stack.last().copied().unwrap_or_default();
         let flags = self.state.flags.stack.last().copied().unwrap_or_default();
@@ -482,16 +489,14 @@ impl<'c, O: Push<u8> + 'c, const N: usize> ProcessSGR for Processor<'c, O, N> {
 
 struct CommandSequenceBuilder<'a, O: Push<u8> + 'a> {
     output: &'a mut O,
-    cache: &'a mut Cache,
     first: bool,
 }
 
 impl<'a, O: Push<u8> + 'a> CommandSequenceBuilder<'a, O> {
     #[inline]
-    fn new(output: &'a mut O, cache: &'a mut Cache) -> Self {
+    fn new(output: &'a mut O) -> Self {
         Self {
             output,
-            cache,
             first: true,
         }
     }
@@ -502,12 +507,7 @@ impl<'a, O: Push<u8> + 'a> CommandSequenceBuilder<'a, O> {
         self.output
             .extend_from_slice(if self.first { BEGIN } else { NEXT });
         self.first = false;
-        let data = self
-            .cache
-            .0
-            .entry(command)
-            .or_insert_with(|| command.into());
-        self.output.extend_from_slice(data);
+        command.render(self.output);
     }
 }
 
@@ -739,8 +739,8 @@ mod tests {
     #[test]
     fn test_processor() {
         let mut output = Vec::<u8>::new();
-        let mut cache = Cache::default();
-        let mut processor = Processor::<_, 16>::new(&mut cache, &mut output);
+        let mut state = ProcessorState::<16>::default();
+        let mut processor = Processor::new(&mut state, &mut output);
         processor.push_instruction(Instruction::PushForeground(Color::Plain(
             BasicColor::Green,
             Brightness::Normal,

@@ -13,6 +13,7 @@ pub mod timestamp;
 pub mod types;
 
 // private modules
+mod btoa;
 mod console;
 mod filtering;
 mod formatting;

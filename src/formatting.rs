@@ -8,7 +8,7 @@ use serde_json as json;
 
 // local imports
 use crate::datefmt;
-use crate::eseq::{Cache, Processor, ProcessorState};
+use crate::eseq::{Processor, ProcessorState};
 use crate::filtering::IncludeExcludeSetting;
 use crate::fmtx;
 use crate::model;
@@ -53,7 +53,6 @@ use theme::{Element, StylingPush, Theme};
 
 #[derive(Default)]
 pub struct RecordFormatterState {
-    cache: Cache,
     scratch: Vec<u8>,
     processor_state: ProcessorState<16>,
 }
@@ -101,7 +100,7 @@ impl RecordFormatter {
         buf: &mut Vec<u8>,
         rec: &model::Record,
     ) {
-        let mut processor = Processor::new(&mut state.cache, &mut state.processor_state, buf);
+        let mut processor = Processor::new(&mut state.processor_state, buf);
         let scratch = &mut state.scratch;
         self.theme.apply(&mut processor, &rec.level, |s| {
             //

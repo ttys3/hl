@@ -7,7 +7,7 @@ use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
 
 // local imports
 use hl::{
-    eseq::{Cache, Processor, ProcessorState},
+    eseq::{Processor, ProcessorState},
     fmtx::Push,
     settings::{self, Color, Mode, Style, StylePack},
     theme::{Element, StylingPush, Theme},
@@ -123,8 +123,6 @@ fn criterion_benchmark(c: &mut Criterion) {
         (b"key7", b"value7"),
     ];
     let mut buf = Vec::with_capacity(8192);
-    let mut cache = Cache::default();
-
     let mut c1 = None;
     let mut n1 = 0;
     c.bench_function("theme", |b| {
@@ -132,7 +130,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let mut state = ProcessorState::<16>::default();
         b.iter(|| {
             buf.clear();
-            let mut processor = Processor::new(&mut cache, &mut state, &mut buf);
+            let mut processor = Processor::new(&mut state, &mut buf);
             theme.apply(&mut processor, &Some(Level::Debug), |s| {
                 s.element(Element::Time, |s| {
                     s.extend_from_slice(b"2020-01-01 00:00:00")
