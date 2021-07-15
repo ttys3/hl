@@ -74,7 +74,7 @@ codegen-units = 1
 lto = true
 
 [[bench]]
-name = "re_match"
+name = "regex"
 harness = false
 
 [[bench]]
@@ -86,7 +86,7 @@ name = "ts_format"
 harness = false
 
 [[bench]]
-name = "wild_match"
+name = "wildcard"
 harness = false
 
 [[bench]]
