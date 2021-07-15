@@ -94,6 +94,7 @@ pub enum CommandCode {
 }
 
 impl Render for CommandCode {
+    #[inline(always)]
     fn render<B: Push<u8>>(&self, buf: &mut B) {
         buf.extend_from_slice(btoa(*self as u8))
     }
@@ -130,6 +131,7 @@ impl BasicColor {
         Color::Plain(self, Brightness::Normal).bg()
     }
 
+    #[inline(always)]
     fn render<B: Push<u8>>(&self, buf: &mut B, base: u8) {
         buf.extend_from_slice(btoa(base + (*self as u8)))
     }
@@ -156,6 +158,7 @@ impl PlainColor {
 pub struct Background(Color);
 
 impl Render for Background {
+    #[inline(always)]
     fn render<B: Push<u8>>(&self, buf: &mut B) {
         self.0.render(buf, CommandCode::SetFirstBackgroundColor)
     }
@@ -172,12 +175,14 @@ impl From<Color> for Background {
 pub struct Foreground(Color);
 
 impl Render for Foreground {
+    #[inline(always)]
     fn render<B: Push<u8>>(&self, buf: &mut B) {
         self.0.render(buf, CommandCode::SetFirstForegroundColor)
     }
 }
 
 impl From<Color> for Foreground {
+    #[inline(always)]
     fn from(color: Color) -> Foreground {
         Foreground(color)
     }
@@ -459,12 +464,12 @@ impl<'c, O: Push<u8> + 'c, const N: usize> Processor<'c, O, N> {
 }
 
 impl<'c, O: Push<u8> + 'c, const N: usize> Push<u8> for Processor<'c, O, N> {
-    #[inline]
+    #[inline(always)]
     fn push(&mut self, data: u8) {
         self.sync(Annotations::all());
         self.output.push(data);
     }
-    #[inline]
+    #[inline(always)]
     fn extend_from_slice(&mut self, data: &[u8]) {
         self.sync(Annotations::all());
         self.output.extend_from_slice(data);
@@ -472,12 +477,12 @@ impl<'c, O: Push<u8> + 'c, const N: usize> Push<u8> for Processor<'c, O, N> {
 }
 
 impl<'c, O: Push<u8> + 'c, const N: usize> PushAnnotatedData for Processor<'c, O, N> {
-    #[inline]
+    #[inline(always)]
     fn push_annotated(&mut self, data: u8, annotations: Annotations) {
         self.sync(annotations);
         self.output.push(data);
     }
-    #[inline]
+    #[inline(always)]
     fn extend_from_slice_annotated(&mut self, data: &[u8], annotations: Annotations) {
         self.sync(annotations);
         self.output.extend_from_slice(data);
@@ -485,14 +490,14 @@ impl<'c, O: Push<u8> + 'c, const N: usize> PushAnnotatedData for Processor<'c, O
 }
 
 impl<'c, O: Push<u8> + 'c, const N: usize> Drop for Processor<'c, O, N> {
-    #[inline]
+    #[inline(always)]
     fn drop(&mut self) {
         self.output.extend_from_slice(RESET);
     }
 }
 
 impl<'c, O: Push<u8> + 'c, const N: usize> ProcessSGR for Processor<'c, O, N> {
-    #[inline]
+    #[inline(always)]
     fn push_instruction(&mut self, instruction: Instruction) {
         match instruction {
             Instruction::ResetAll => {
@@ -540,7 +545,7 @@ struct CommandSequenceBuilder<'a, O: Push<u8> + 'a> {
 }
 
 impl<'a, O: Push<u8> + 'a> CommandSequenceBuilder<'a, O> {
-    #[inline]
+    #[inline(always)]
     fn new(output: &'a mut O) -> Self {
         Self {
             output,
@@ -548,7 +553,7 @@ impl<'a, O: Push<u8> + 'a> CommandSequenceBuilder<'a, O> {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn append(&mut self, command: Command) {
         // println!("BEGIN or NEXT: {:?}", command);
         self.output
@@ -559,7 +564,7 @@ impl<'a, O: Push<u8> + 'a> CommandSequenceBuilder<'a, O> {
 }
 
 impl<'a, O: Push<u8> + 'a> Drop for CommandSequenceBuilder<'a, O> {
-    #[inline]
+    #[inline(always)]
     fn drop(&mut self) {
         if !self.first {
             // println!("END");
@@ -668,7 +673,7 @@ const DUAL_SYNC_TABLE: &[(
 
 // ---
 
-#[inline]
+#[inline(always)]
 fn dual_flag_sync(mut diff: Flags, flags: Flags, f0: Flag, f1: Flag) -> (bool, bool, bool) {
     let mut result = (false, false, false);
     if !diff.intersects(f0 | f1) {
@@ -687,17 +692,17 @@ fn dual_flag_sync(mut diff: Flags, flags: Flags, f0: Flag, f1: Flag) -> (bool, b
     result
 }
 
-#[inline]
+#[inline(always)]
 fn begin(buf: &mut Vec<u8>) {
     buf.extend_from_slice(BEGIN);
 }
 
-#[inline]
+#[inline(always)]
 fn next(buf: &mut Vec<u8>) {
     buf.extend_from_slice(NEXT);
 }
 
-#[inline]
+#[inline(always)]
 fn end(buf: &mut Vec<u8>) {
     buf.extend_from_slice(END);
 }

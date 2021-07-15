@@ -54,7 +54,7 @@ impl IncludeExcludeSetting {
 }
 
 impl Default for IncludeExcludeSetting {
-    #[inline(always)]
+    #[inline]
     fn default() -> Self {
         Self::Unspecified
     }
@@ -69,7 +69,7 @@ pub struct MatchOptions<N: KeyNormalize> {
 }
 
 impl<N: KeyNormalize + Default> Default for MatchOptions<N> {
-    #[inline(always)]
+    #[inline]
     fn default() -> Self {
         Self {
             delimiter: b'.',

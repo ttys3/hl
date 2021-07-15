@@ -1,4 +1,4 @@
-#[inline(always)]
+#[inline]
 pub fn btoa(value: u8) -> &'static [u8] {
     return VALUES[value as usize];
 }

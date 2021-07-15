@@ -7,9 +7,9 @@ use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
 
 // local imports
 use hl::{
-    eseq::{Processor, ProcessorState, Render},
+    eseq::{Color, Command, Processor, ProcessorState, Render},
     fmtx::Push,
-    settings::{self, Color, Mode, Style, StylePack},
+    settings::{self, Color as ColorSetting, Mode, Style, StylePack},
     theme::{Element, StylingPush, Theme},
     types::Level,
 };
@@ -22,87 +22,87 @@ fn criterion_benchmark(c: &mut Criterion) {
         default: StylePack {
             time: Style {
                 modes: Vec::default(),
-                foreground: Some(Color::Palette(8)),
+                foreground: Some(ColorSetting::Palette(8)),
                 background: None,
             },
             level: Style {
                 modes: Vec::default(),
-                foreground: Some(Color::Palette(25)),
+                foreground: Some(ColorSetting::Palette(25)),
                 background: None,
             },
             logger: Style {
                 modes: Vec::default(),
-                foreground: Some(Color::Palette(8)),
+                foreground: Some(ColorSetting::Palette(8)),
                 background: None,
             },
             caller: Style {
                 modes: Vec::default(),
-                foreground: Some(Color::Palette(8)),
+                foreground: Some(ColorSetting::Palette(8)),
                 background: None,
             },
             message: Style {
                 modes: Vec::default(),
-                foreground: Some(Color::Palette(255)),
+                foreground: Some(ColorSetting::Palette(255)),
                 background: None,
             },
             equal_sign: Style {
                 modes: Vec::default(),
-                foreground: Some(Color::Palette(8)),
+                foreground: Some(ColorSetting::Palette(8)),
                 background: None,
             },
             brace: Style {
                 modes: Vec::default(),
-                foreground: Some(Color::Palette(246)),
+                foreground: Some(ColorSetting::Palette(246)),
                 background: None,
             },
             quote: Style {
                 modes: Vec::default(),
-                foreground: Some(Color::Palette(246)),
+                foreground: Some(ColorSetting::Palette(246)),
                 background: None,
             },
             delimiter: Style {
                 modes: Vec::default(),
-                foreground: Some(Color::Palette(8)),
+                foreground: Some(ColorSetting::Palette(8)),
                 background: None,
             },
             comma: Style {
                 modes: Vec::default(),
-                foreground: Some(Color::Palette(8)),
+                foreground: Some(ColorSetting::Palette(8)),
                 background: None,
             },
             at_sign: Style {
                 modes: vec![Mode::Italic],
-                foreground: Some(Color::Palette(8)),
+                foreground: Some(ColorSetting::Palette(8)),
                 background: None,
             },
             ellipsis: Style {
                 modes: Vec::default(),
-                foreground: Some(Color::Palette(8)),
+                foreground: Some(ColorSetting::Palette(8)),
                 background: None,
             },
             field_key: Style {
                 modes: Vec::default(),
-                foreground: Some(Color::Palette(117)),
+                foreground: Some(ColorSetting::Palette(117)),
                 background: None,
             },
             null: Style {
                 modes: Vec::default(),
-                foreground: Some(Color::Palette(136)),
+                foreground: Some(ColorSetting::Palette(136)),
                 background: None,
             },
             boolean: Style {
                 modes: Vec::default(),
-                foreground: Some(Color::Palette(178)),
+                foreground: Some(ColorSetting::Palette(178)),
                 background: None,
             },
             number: Style {
                 modes: Vec::default(),
-                foreground: Some(Color::Palette(41)),
+                foreground: Some(ColorSetting::Palette(41)),
                 background: None,
             },
             string: Style {
                 modes: Vec::default(),
-                foreground: Some(Color::Palette(36)),
+                foreground: Some(ColorSetting::Palette(36)),
                 background: None,
             },
             whitespace: Style {
@@ -126,11 +126,18 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut c1 = None;
     let mut n1 = 0;
 
-    c.bench_function("color", |b| {
-        let color = hl::eseq::Color::Palette(246).foreground();
+    c.bench_function("sgr-color", |b| {
+        let color = Color::Palette(246).foreground();
         b.iter(|| {
             buf.clear();
             color.render(&mut buf);
+        });
+    });
+    c.bench_function("sgr-command-set-color", |b| {
+        let command = Command::SetForeground(Color::Palette(246));
+        b.iter(|| {
+            buf.clear();
+            command.render(&mut buf);
         });
     });
     c.bench_function("theme", |b| {

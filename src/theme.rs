@@ -79,7 +79,7 @@ impl<'a, P: ProcessSGR> Styler<'a, P> {
     //     self.set_style(None)
     // }
 
-    #[inline]
+    #[inline(always)]
     fn set_style(&mut self, style: Option<usize>) -> Option<Style> {
         let style = match style {
             Some(style) => Some(style),
