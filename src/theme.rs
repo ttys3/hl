@@ -329,15 +329,14 @@ impl StylePack {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::eseq::{Cache, Processor, ProcessorState};
+    use crate::eseq::{Processor, ProcessorState};
 
     #[test]
     fn test_theme() {
         let theme = Theme::none();
         let mut buf = Vec::new();
-        let mut cache = Cache::default();
         let mut state = ProcessorState::<2>::default();
-        let mut processor = Processor::new(&mut cache, &mut state, &mut buf);
+        let mut processor = Processor::new(&mut state, &mut buf);
         theme.apply(&mut processor, &Some(Level::Debug), |s| {
             s.element(Element::Message, |s| s.extend_from_slice(b"hello!"));
         });

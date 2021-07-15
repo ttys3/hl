@@ -24,8 +24,8 @@ pub trait Render {
 
 bitflags! {
     pub struct Annotations: u8 {
-        const UsesForeground = 1 << 0;
-        const UsesBackground = 1 << 1;
+        const USES_FOREGROUND = 1 << 0;
+        const USES_BACKGROUND = 1 << 1;
     }
 }
 
@@ -418,12 +418,12 @@ impl<'c, O: Push<u8> + 'c, const N: usize> Processor<'c, O, N> {
         let fg = self.state.fg.stack.last().copied().unwrap_or_default();
         let flags = self.state.flags.stack.last().copied().unwrap_or_default();
         // println!("bg={:?} synced={:?}", bg, self.bg.synced);
-        if self.state.bg.synced != bg && annotations.contains(Annotations::UsesBackground) {
+        if self.state.bg.synced != bg && annotations.contains(Annotations::USES_BACKGROUND) {
             csb.append(Command::SetBackground(bg));
             self.state.bg.synced = bg;
         }
         // println!("fg={:?} synced={:?}", fg, self.fg.synced);
-        if self.state.fg.synced != fg && annotations.contains(Annotations::UsesForeground) {
+        if self.state.fg.synced != fg && annotations.contains(Annotations::USES_FOREGROUND) {
             csb.append(Command::SetForeground(fg));
             self.state.fg.synced = fg;
         }
@@ -593,19 +593,19 @@ const SINGLE_SYNC_TABLE: &[(Flag, CommandCode, CommandCode, Annotations)] = &[
         Flag::Italic,
         CommandCode::SetItalic,
         CommandCode::ResetItalic,
-        Annotations::UsesForeground,
+        Annotations::USES_FOREGROUND,
     ),
     (
         Flag::Concealed,
         CommandCode::SetConcealed,
         CommandCode::ResetConcealed,
-        Annotations::UsesForeground,
+        Annotations::USES_FOREGROUND,
     ),
     (
         Flag::CrossedOut,
         CommandCode::SetCrossedOut,
         CommandCode::ResetCrossedOut,
-        Annotations::UsesForeground,
+        Annotations::USES_FOREGROUND,
     ),
     (
         Flag::Reversed,
@@ -617,7 +617,7 @@ const SINGLE_SYNC_TABLE: &[(Flag, CommandCode, CommandCode, Annotations)] = &[
         Flag::Overlined,
         CommandCode::SetOverlined,
         CommandCode::ResetOverlined,
-        Annotations::UsesForeground,
+        Annotations::USES_FOREGROUND,
     ),
 ];
 
@@ -635,7 +635,7 @@ const DUAL_SYNC_TABLE: &[(
         CommandCode::SetBold,
         CommandCode::SetFaint,
         CommandCode::ResetBoldAndFaint,
-        Annotations::UsesForeground,
+        Annotations::USES_FOREGROUND,
     ),
     (
         Flag::Underlined,
@@ -643,7 +643,7 @@ const DUAL_SYNC_TABLE: &[(
         CommandCode::SetUnderlined,
         CommandCode::SetDoublyUnderlined,
         CommandCode::ResetAllUnderlines,
-        Annotations::UsesForeground,
+        Annotations::USES_FOREGROUND,
     ),
     (
         Flag::SlowBlink,
@@ -667,7 +667,7 @@ const DUAL_SYNC_TABLE: &[(
         CommandCode::SetSubscript,
         CommandCode::SetSuperscript,
         CommandCode::ResetSuperscriptAndSubscript,
-        Annotations::UsesForeground,
+        Annotations::USES_FOREGROUND,
     ),
 ];
 
