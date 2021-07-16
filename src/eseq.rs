@@ -468,6 +468,9 @@ impl<'c, O: Push<u8> + 'c, const N: usize> Push<u8> for Processor<'c, O, N> {
     #[inline(always)]
     fn push(&mut self, data: u8) {
         self.sync(Annotations::all());
+        if data == b'\n' {
+            self.output.extend_from_slice(b"\x1B[K");
+        }
         self.output.push(data);
     }
     #[inline(always)]

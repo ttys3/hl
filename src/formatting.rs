@@ -188,11 +188,11 @@ impl RecordFormatter {
                 s.element(Element::Caller, |s| s.extend_from_slice(text.as_bytes()));
                 // println!("P3");
             };
+            //
+            // eol
+            //
+            s.push(b'\n');
         });
-        //
-        // eol
-        //
-        processor.push(b'\n');
     }
 
     fn format_field<S: StylingPush>(
