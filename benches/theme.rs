@@ -122,7 +122,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         (b"key6", b"value6"),
         (b"key7", b"value7"),
     ];
-    let mut buf = Vec::with_capacity(8192);
+    let mut buf = Vec::<u8>::with_capacity(4096);
     let mut c1 = None;
     let mut n1 = 0;
 

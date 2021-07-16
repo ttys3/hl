@@ -226,6 +226,7 @@ impl Color {
         )
     }
 
+    #[inline]
     fn render<B: Push<u8>>(&self, buf: &mut B, base: CommandCode) {
         let base = base as u8;
         match self {
