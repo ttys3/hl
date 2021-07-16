@@ -39,6 +39,20 @@ fields:
 # Number of processing threads, configured automatically based on CPU count if not specified.
 concurrency: ~
 
+output:
+  layout: 
+    - timestamp
+    - level
+    - logger
+    - message
+    - fields
+    - caller
+  level: '|{value}|'
+  logger: '{value}:'
+  caller: '@ {value}'
+  field: '{key}={value}'
+  string: "'{value}'"
+
 # Currently selected theme.
 theme: one-dark-green
 
