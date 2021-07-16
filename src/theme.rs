@@ -159,7 +159,7 @@ impl Theme {
             },
             // current: None,
         };
-        f(&mut styler);
+        styler.element(Element::Whitespace, |s| f(s));
         // styler.reset()
     }
 }
@@ -318,6 +318,7 @@ impl StylePack {
         result.add(Element::Logger, &Style::from(&s.logger));
         result.add(Element::Message, &Style::from(&s.message));
         result.add(Element::Quote, &Style::from(&s.quote));
+        result.add(Element::Brace, &Style::from(&s.brace));
         result.add(Element::Time, &Style::from(&s.time));
         result.add(Element::Whitespace, &Style::from(&s.whitespace));
         result
