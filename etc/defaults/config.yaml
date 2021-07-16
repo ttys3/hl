@@ -60,32 +60,23 @@ theme: one-dark-green
 themes:
   one-dark-green:
     default:
-      time:
-        foreground: bright-black
-      logger:
-        foreground: bright-black
+      time: {}
+      logger: {}
       caller:
-        foreground: bright-black
         modes: [italic]
-      level:
-        foreground: bright-black
-      delimiter:
-        foreground: bright-black
+      level: {}
+      delimiter: {}
       message:
         foreground: bright-white
       field-key:
         foreground: green
         modes: [underline]
-      equal-sign:
-        foreground: bright-black
+      equal-sign: {}
       quote:
         foreground: cyan
-      brace:
-        foreground: bright-black
-      ellipsis:
-        foreground: bright-black
+      brace: {}
+      ellipsis: {}
       at-sign:
-        foreground: bright-black
         modes: [italic]
       'null':
         foreground: red
@@ -95,6 +86,9 @@ themes:
         foreground: blue
       string:
         foreground: cyan
+      whitespace:
+        foreground: bright-black
+        background: '#102030'
     levels:
       debug:
         level:
