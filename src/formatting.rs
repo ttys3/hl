@@ -130,7 +130,7 @@ impl RecordFormatter {
             //
             // level
             //
-            s.element(Element::Whitespace, |s| s.push(b' '));
+            s.push(b' ');
             s.element(Element::Delimiter, |s| s.push(b'|'));
             s.element(Element::Level, |s| {
                 s.extend_from_slice(match rec.level {
@@ -146,7 +146,7 @@ impl RecordFormatter {
             // logger
             //
             if let Some(logger) = rec.logger {
-                s.element(Element::Whitespace, |s| s.push(b' '));
+                s.push(b' ');
                 s.element(Element::Logger, |s| {
                     s.extend_from_slice(logger.as_bytes());
                     s.push(b':');
@@ -156,8 +156,8 @@ impl RecordFormatter {
             // message text
             //
             if let Some(text) = rec.message {
+                s.push(b' ');
                 s.element(Element::Message, |s| {
-                    s.push(b' ');
                     self.format_message(s, text, scratch);
                 });
             }
@@ -335,7 +335,7 @@ impl<'a> FieldFormatter<'a> {
         if setting == IncludeExcludeSetting::Exclude && leaf {
             return false;
         }
-        s.element(Element::Whitespace, |s| s.push(b' '));
+        s.push(b' ');
         s.element(Element::FieldKey, |s| {
             for b in key.as_bytes() {
                 let b = if *b == b'_' { b'-' } else { *b };
@@ -394,7 +394,7 @@ impl<'a> FieldFormatter<'a> {
                     s.element(Element::Ellipsis, |s| s.extend_from_slice(b" ..."));
                 }
                 if item.fields.len() != 0 {
-                    s.element(Element::Whitespace, |s| s.push(b' '));
+                    s.push(b' ');
                 }
                 s.element(Element::Brace, |s| s.push(b'}'));
             }
