@@ -1,15 +1,18 @@
-use std::clone::Clone;
-use std::collections::HashMap;
-use std::vec::Vec;
+// std imports
+use std::{clone::Clone, collections::HashMap, vec::Vec};
 
-use crate::eseq::{
-    self, BasicColor::*, Brightness, Color, Flag, Flags, Instruction, Operator, ProcessSGR,
+// third-party imports
+use enum_map::{enum_map, Enum, EnumMap};
+
+// local cimports
+use crate::{
+    eseq::{
+        self, BasicColor::*, Brightness, Color, Flag, Flags, Instruction, Operator, ProcessSGR,
+    },
+    fmtx::Push,
+    settings,
+    types::{self, Level},
 };
-use crate::fmtx::Push;
-use crate::settings;
-use crate::types;
-
-pub use types::Level;
 
 // ---
 
@@ -121,23 +124,23 @@ impl<'a, P: ProcessSGR + 'a> Push<u8> for Styler<'a, P> {
 // ---
 
 pub struct Theme {
-    packs: HashMap<Level, StylePack>,
+    packs: EnumMap<Level, Option<StylePack>>,
     default: StylePack,
 }
 
 impl Theme {
     pub fn none() -> Self {
         Self {
-            packs: HashMap::new(),
+            packs: EnumMap::default(),
             default: StylePack::none(),
         }
     }
 
     pub fn load(s: &settings::Theme) -> Self {
         let default = StylePack::load(&s.default);
-        let mut packs = HashMap::new();
+        let mut packs = EnumMap::default();
         for (level, pack) in &s.levels {
-            packs.insert(*level, StylePack::load(&s.default.clone().merged(&pack)));
+            packs[*level] = Some(StylePack::load(&s.default.clone().merged(&pack)));
         }
         Self { default, packs }
     }
@@ -151,7 +154,7 @@ impl Theme {
         let mut styler = Styler {
             processor,
             pack: match level {
-                Some(level) => match self.packs.get(level) {
+                Some(level) => match &self.packs[*level] {
                     Some(pack) => pack,
                     None => &self.default,
                 },
