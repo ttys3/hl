@@ -58,8 +58,9 @@ features = ["handleapi"]
 
 [dev-dependencies]
 criterion = "0"
-stats_alloc = "0"
 diligent-date-parser = "0"
+pipe = "0"
+stats_alloc = "0"
 regex = "1"
 wildmatch = "2"
 
@@ -87,4 +88,8 @@ harness = false
 
 [[bench]]
 name = "theme"
+harness = false
+
+[[bench]]
+name = "app"
 harness = false

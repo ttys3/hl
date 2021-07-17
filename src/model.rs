@@ -527,7 +527,7 @@ impl FieldFilter {
 
 // ---
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct FieldFilterSet(Vec<FieldFilter>);
 
 impl FieldFilterSet {
@@ -544,7 +544,7 @@ impl FieldFilterSet {
 
 // ---
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Filter {
     pub fields: FieldFilterSet,
     pub level: Option<Level>,
@@ -560,6 +560,8 @@ impl Filter {
             && self.until.is_none()
     }
 }
+
+// ---
 
 pub struct Object<'a> {
     pub fields: heapless::Vec<(&'a str, &'a RawValue), 32>,

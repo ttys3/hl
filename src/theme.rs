@@ -44,6 +44,10 @@ impl Theme {
         Ok(themecfg::Theme::load(app_dirs, name)?.into())
     }
 
+    pub fn embedded(name: &str) -> Result<Self> {
+        Ok(themecfg::Theme::embedded(name)?.into())
+    }
+
     pub fn apply<'a, B: Push<u8>, F: FnOnce(&mut Styler<'a, B>)>(
         &'a self,
         buf: &'a mut B,
