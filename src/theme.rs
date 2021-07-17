@@ -21,7 +21,7 @@ pub use types::Level;
 // ---
 
 pub trait StylingPush<B: Push<u8>> {
-    fn element<F: FnOnce(&mut Self)>(&mut self, element: Element, f: F);
+    fn element<R, F: FnOnce(&mut Self) -> R>(&mut self, element: Element, f: F) -> R;
     fn batch<F: FnOnce(&mut B)>(&mut self, f: F);
 }
 
@@ -217,11 +217,12 @@ impl<'a, B: Push<u8>> Styler<'a, B> {
 
 impl<'a, B: Push<u8>> StylingPush<B> for Styler<'a, B> {
     #[inline(always)]
-    fn element<F: FnOnce(&mut Self)>(&mut self, element: Element, f: F) {
+    fn element<R, F: FnOnce(&mut Self) -> R>(&mut self, element: Element, f: F) -> R {
         let style = self.current;
         self.set(element);
-        f(self);
+        let result = f(self);
         self.set_style(style);
+        result
     }
     #[inline(always)]
     fn batch<F: FnOnce(&mut B)>(&mut self, f: F) {

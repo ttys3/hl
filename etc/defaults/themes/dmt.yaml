@@ -10,28 +10,25 @@ default:
     foreground: 25
   message:
     foreground: 255
-  field-key:
+  field:
+    foreground: 8
+  key:
     foreground: 117
     modes: [underline]
-  equal-sign:
-    foreground: 8
-  quote:
-    foreground: 246
-  brace:
-    foreground: 246
   ellipsis:
     foreground: 8
-  at-sign:
+  object:
     foreground: 8
-    modes: [italic]
-  'null':
-    foreground: 136
-  boolean:
-    foreground: 178
-  number:
-    foreground: 41
+  array:
+    foreground: 8
   string:
     foreground: 36
+  number:
+    foreground: 41
+  boolean:
+    foreground: 178
+  'null':
+    foreground: 136
 levels:
   debug:
     level:

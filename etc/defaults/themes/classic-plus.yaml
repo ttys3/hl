@@ -5,22 +5,28 @@ default:
     foreground: bright-black
   caller:
     foreground: bright-black
+  level:
+    foreground: magenta
   message:
     foreground: bright-white
-  field-key:
-    foreground: green
-  equal-sign:
+  field:
     foreground: bright-black
+  key:
+    foreground: green
   ellipsis:
     foreground: bright-black
-  at-sign:
-    foreground: bright-black
-  'null':
-    foreground: yellow
-  boolean:
-    foreground: yellow
+  object:
+    foreground: default
+  array:
+    foreground: default
+  string:
+    foreground: default
   number:
     foreground: cyan
+  boolean:
+    foreground: yellow
+  'null':
+    foreground: yellow
 levels:
   debug:
     level:
@@ -32,17 +38,7 @@ levels:
     level:
       foreground: bright-yellow
       modes: [reverse]
-    delimiter:
-      foreground: bright-yellow
-      modes: [reverse]
-    field-key:
-      foreground: yellow
   error:
     level:
       foreground: bright-red
       modes: [reverse]
-    delimiter:
-      foreground: bright-red
-      modes: [reverse]
-    field-key:
-      foreground: bright-red

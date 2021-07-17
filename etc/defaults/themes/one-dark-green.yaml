@@ -8,32 +8,27 @@ default:
     modes: [italic]
   level:
     foreground: bright-black
-  delimiter:
-    foreground: bright-black
   message:
     foreground: bright-white
-  field-key:
+  field:
+    foreground: bright-black
+  key:
     foreground: green
     modes: [underline]
-  equal-sign:
-    foreground: bright-black
-  quote:
-    foreground: cyan
-  brace:
-    foreground: bright-black
   ellipsis:
     foreground: bright-black
-  at-sign:
+  object:
     foreground: bright-black
-    modes: [italic]
-  'null':
-    foreground: red
-  boolean:
-    foreground: red
-  number:
-    foreground: blue
+  array:
+    foreground: bright-black
   string:
     foreground: cyan
+  number:
+    foreground: blue
+  boolean:
+    foreground: red
+  'null':
+    foreground: red
 levels:
   debug:
     level:

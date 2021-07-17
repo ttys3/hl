@@ -173,7 +173,9 @@ impl RecordFormatter {
         filter: Option<&IncludeExcludeKeyFilter>,
     ) -> bool {
         let mut fv = FieldFormatter::new(self);
-        fv.format(s, key, value, filter, IncludeExcludeSetting::Unspecified)
+        s.element(Element::Field, |s| {
+            fv.format(s, key, value, filter, IncludeExcludeSetting::Unspecified)
+        })
     }
 
     fn format_value<S: StylingPush<Buf>>(&self, s: &mut S, value: &RawValue) {

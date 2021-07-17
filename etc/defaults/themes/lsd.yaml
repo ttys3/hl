@@ -10,24 +10,25 @@ default:
     foreground: magenta
   message:
     foreground: bright-white
-  field-key:
+  field:
+    foreground: bright-black
+  key:
     foreground: bright-blue
     modes: [underline]
-  equal-sign:
-    foreground: bright-black
   ellipsis:
     foreground: bright-black
-  at-sign:
+  object:
     foreground: bright-black
-    modes: [italic]
-  'null':
+  array:
+    foreground: bright-black
+  string:
+    foreground: green
+  number:
     foreground: yellow
   boolean:
     foreground: yellow
-  number:
+  'null':
     foreground: yellow
-  string:
-    foreground: green
 levels:
   debug:
     level:
