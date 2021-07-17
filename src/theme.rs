@@ -1,8 +1,8 @@
 // std imports
-use std::{collections::HashMap, vec::Vec};
+use std::vec::Vec;
 
 // third-party imports
-use enum_map::EnumMap;
+use enum_map::{Enum, EnumMap};
 
 // local imports
 use crate::{
@@ -12,6 +12,7 @@ use crate::{
 pub use types::Level;
 
 #[repr(u8)]
+#[derive(Enum)]
 pub enum Element {
     Time,
     Level,
@@ -129,7 +130,7 @@ impl From<&settings::Style> for Style {
 
 impl<'a> Styler<'a> {
     pub fn set(&mut self, buf: &mut Buf, e: Element) {
-        self.set_style(buf, self.pack.elements[e as usize])
+        self.set_style(buf, self.pack.elements[e])
     }
 
     fn reset(&mut self, buf: &mut Buf) {
@@ -170,29 +171,14 @@ impl Theme {
     }
 }
 
+#[derive(Default)]
 struct StylePack {
-    elements: Vec<Option<usize>>,
+    elements: EnumMap<Element, Option<usize>>,
     reset: Option<usize>,
     styles: Vec<Style>,
 }
 
 impl StylePack {
-    fn new() -> Self {
-        Self {
-            styles: vec![Style::reset()],
-            reset: Some(0),
-            elements: vec![None; 255],
-        }
-    }
-
-    fn none() -> Self {
-        Self {
-            elements: vec![None; 255],
-            reset: None,
-            styles: Vec::new(),
-        }
-    }
-
     fn add(&mut self, element: Element, style: &Style) {
         let pos = match self.styles.iter().position(|x| x == style) {
             Some(pos) => pos,
@@ -201,11 +187,11 @@ impl StylePack {
                 self.styles.len() - 1
             }
         };
-        self.elements[element as usize] = Some(pos);
+        self.elements[element] = Some(pos);
     }
 
     fn load(s: &settings::StylePack<settings::Style>) -> Self {
-        let mut result = Self::new();
+        let mut result = Self::default();
         result.add(Element::Caller, &Style::from(&s.caller));
         result.add(Element::Comma, &Style::from(&s.comma));
         result.add(Element::Delimiter, &Style::from(&s.delimiter));
@@ -221,15 +207,10 @@ impl StylePack {
         result.add(Element::Logger, &Style::from(&s.logger));
         result.add(Element::Message, &Style::from(&s.message));
         result.add(Element::Quote, &Style::from(&s.quote));
+        result.add(Element::Brace, &Style::from(&s.brace));
         result.add(Element::Time, &Style::from(&s.time));
         result.add(Element::Whitespace, &Style::from(&s.time));
         result
-    }
-}
-
-impl Default for StylePack {
-    fn default() -> Self {
-        Self::none()
     }
 }
 
