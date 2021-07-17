@@ -1,11 +1,14 @@
-use std::collections::HashMap;
-use std::vec::Vec;
+// std imports
+use std::{collections::HashMap, vec::Vec};
 
-use crate::eseq;
-use crate::settings;
-use crate::types;
+// third-party imports
+use enum_map::EnumMap;
 
-use eseq::{Brightness, Color, ColorCode, Mode, Sequence, StyleCode};
+// local imports
+use crate::{
+    eseq::{Brightness, Color, ColorCode, Mode, Sequence, StyleCode},
+    settings, types,
+};
 pub use types::Level;
 
 #[repr(u8)]
@@ -38,7 +41,7 @@ pub struct Styler<'a> {
 }
 
 pub struct Theme {
-    packs: HashMap<Level, StylePack>,
+    packs: EnumMap<Level, StylePack>,
     default: StylePack,
 }
 
@@ -80,6 +83,12 @@ impl Style {
             settings::Color::Palette(code) => ColorCode::Palette(*code),
             settings::Color::RGB(settings::RGB(r, g, b)) => ColorCode::RGB(*r, *g, *b),
         }
+    }
+}
+
+impl Default for Style {
+    fn default() -> Self {
+        Self::reset()
     }
 }
 
@@ -151,10 +160,7 @@ impl Theme {
     ) {
         let mut styler = Styler {
             pack: match level {
-                Some(level) => match self.packs.get(level) {
-                    Some(pack) => pack,
-                    None => &self.default,
-                },
+                Some(level) => &self.packs[*level],
                 None => &self.default,
             },
             current: None,
@@ -221,19 +227,25 @@ impl StylePack {
     }
 }
 
+impl Default for StylePack {
+    fn default() -> Self {
+        Self::none()
+    }
+}
+
 impl Theme {
     pub fn none() -> Self {
         Self {
-            packs: HashMap::new(),
-            default: StylePack::none(),
+            packs: EnumMap::default(),
+            default: StylePack::default(),
         }
     }
 
     pub fn load(s: &settings::Theme) -> Self {
         let default = StylePack::load(&s.default);
-        let mut packs = HashMap::new();
+        let mut packs = EnumMap::default();
         for (level, pack) in &s.levels {
-            packs.insert(*level, StylePack::load(&s.default.clone().merged(&pack)));
+            packs[*level] = StylePack::load(&s.default.clone().merged(&pack));
         }
         Self { default, packs }
     }
