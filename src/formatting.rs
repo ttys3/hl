@@ -91,7 +91,8 @@ impl RecordFormatter {
             //
             // level
             //
-            s.batch(|buf| buf.push(b' '));
+            // s.batch(|buf| buf.push(b' '));
+            s.space();
             s.element(Element::Level, |s| {
                 s.batch(|buf| {
                     buf.push(b'|');
@@ -114,6 +115,7 @@ impl RecordFormatter {
             //
             if let Some(logger) = rec.logger {
                 s.batch(|buf| buf.push(b' '));
+                // s.space();
                 s.element(Element::Logger, |s| {
                     s.element(Element::LoggerInner, |s| {
                         s.batch(|buf| buf.extend_from_slice(logger.as_bytes()))
@@ -126,6 +128,7 @@ impl RecordFormatter {
             //
             if let Some(text) = rec.message {
                 s.batch(|buf| buf.push(b' '));
+                // s.space();
                 s.element(Element::Message, |s| self.format_message(s, text));
             }
             //
@@ -213,10 +216,12 @@ impl RecordFormatter {
                     for (k, v) in item.fields.iter() {
                         has_some |= self.format_field(s, k, v, None)
                     }
-                    if has_some {
-                        s.batch(|buf| buf.push(b' '));
-                    }
-                    s.batch(|buf| buf.push(b'}'));
+                    s.batch(|buf| {
+                        if has_some {
+                            buf.push(b' ');
+                        }
+                        buf.push(b'}');
+                    });
                 });
             }
             b'[' => {
@@ -308,7 +313,8 @@ impl<'a> FieldFormatter<'a> {
         if setting == IncludeExcludeSetting::Exclude && leaf {
             return false;
         }
-        s.batch(|buf| buf.push(b' '));
+        // s.batch(|buf| buf.push(b' '));
+        s.space();
         s.element(Element::Key, |s| {
             for b in key.as_bytes() {
                 let b = if *b == b'_' { b'-' } else { *b };
