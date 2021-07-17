@@ -60,10 +60,11 @@ impl Theme {
                 Some(level) => &self.packs[*level],
                 None => &self.default,
             },
+            synced: None,
             current: None,
         };
         f(&mut styler);
-        styler.reset()
+        // styler.reset()
     }
 }
 
@@ -96,27 +97,41 @@ impl Style {
 
     fn convert_color(color: &themecfg::Color) -> ColorCode {
         match color {
-            themecfg::Color::Plain(color) => {
-                let c = match color {
-                    themecfg::PlainColor::Black => (Color::Black, Brightness::Normal),
-                    themecfg::PlainColor::Blue => (Color::Blue, Brightness::Normal),
-                    themecfg::PlainColor::Cyan => (Color::Cyan, Brightness::Normal),
-                    themecfg::PlainColor::Green => (Color::Green, Brightness::Normal),
-                    themecfg::PlainColor::Magenta => (Color::Magenta, Brightness::Normal),
-                    themecfg::PlainColor::Red => (Color::Red, Brightness::Normal),
-                    themecfg::PlainColor::White => (Color::White, Brightness::Normal),
-                    themecfg::PlainColor::Yellow => (Color::Yellow, Brightness::Normal),
-                    themecfg::PlainColor::BrightBlack => (Color::Black, Brightness::Bright),
-                    themecfg::PlainColor::BrightBlue => (Color::Blue, Brightness::Bright),
-                    themecfg::PlainColor::BrightCyan => (Color::Cyan, Brightness::Bright),
-                    themecfg::PlainColor::BrightGreen => (Color::Green, Brightness::Bright),
-                    themecfg::PlainColor::BrightMagenta => (Color::Magenta, Brightness::Bright),
-                    themecfg::PlainColor::BrightRed => (Color::Red, Brightness::Bright),
-                    themecfg::PlainColor::BrightWhite => (Color::White, Brightness::Bright),
-                    themecfg::PlainColor::BrightYellow => (Color::Yellow, Brightness::Bright),
-                };
-                ColorCode::Plain(c.0, c.1)
-            }
+            themecfg::Color::Plain(color) => match color {
+                themecfg::PlainColor::Default => ColorCode::Default,
+                themecfg::PlainColor::Black => ColorCode::Plain(Color::Black, Brightness::Normal),
+                themecfg::PlainColor::Blue => ColorCode::Plain(Color::Blue, Brightness::Normal),
+                themecfg::PlainColor::Cyan => ColorCode::Plain(Color::Cyan, Brightness::Normal),
+                themecfg::PlainColor::Green => ColorCode::Plain(Color::Green, Brightness::Normal),
+                themecfg::PlainColor::Magenta => {
+                    ColorCode::Plain(Color::Magenta, Brightness::Normal)
+                }
+                themecfg::PlainColor::Red => ColorCode::Plain(Color::Red, Brightness::Normal),
+                themecfg::PlainColor::White => ColorCode::Plain(Color::White, Brightness::Normal),
+                themecfg::PlainColor::Yellow => ColorCode::Plain(Color::Yellow, Brightness::Normal),
+                themecfg::PlainColor::BrightBlack => {
+                    ColorCode::Plain(Color::Black, Brightness::Bright)
+                }
+                themecfg::PlainColor::BrightBlue => {
+                    ColorCode::Plain(Color::Blue, Brightness::Bright)
+                }
+                themecfg::PlainColor::BrightCyan => {
+                    ColorCode::Plain(Color::Cyan, Brightness::Bright)
+                }
+                themecfg::PlainColor::BrightGreen => {
+                    ColorCode::Plain(Color::Green, Brightness::Bright)
+                }
+                themecfg::PlainColor::BrightMagenta => {
+                    ColorCode::Plain(Color::Magenta, Brightness::Bright)
+                }
+                themecfg::PlainColor::BrightRed => ColorCode::Plain(Color::Red, Brightness::Bright),
+                themecfg::PlainColor::BrightWhite => {
+                    ColorCode::Plain(Color::White, Brightness::Bright)
+                }
+                themecfg::PlainColor::BrightYellow => {
+                    ColorCode::Plain(Color::Yellow, Brightness::Bright)
+                }
+            },
             themecfg::Color::Palette(code) => ColorCode::Palette(*code),
             themecfg::Color::RGB(themecfg::RGB(r, g, b)) => ColorCode::RGB(*r, *g, *b),
         }
@@ -169,32 +184,33 @@ impl From<&themecfg::Style> for Style {
 pub struct Styler<'a, B: Push<u8>> {
     buf: &'a mut B,
     pack: &'a StylePack,
+    synced: Option<usize>,
     current: Option<usize>,
 }
 
 impl<'a, B: Push<u8>> Styler<'a, B> {
     #[inline(always)]
-    pub fn set(&mut self, e: Element) {
+    fn set(&mut self, e: Element) -> Option<usize> {
         self.set_style(self.pack.elements[e])
     }
 
     #[inline(always)]
-    fn reset(&mut self) {
+    fn reset(&mut self) -> Option<usize> {
         self.set_style(None)
     }
 
     #[inline(always)]
-    fn set_style(&mut self, style: Option<usize>) {
-        let style = match style {
-            Some(style) => Some(style),
-            None => self.pack.reset,
-        };
-        if let Some(style) = style {
-            if self.current != Some(style) {
-                self.current = Some(style);
-                let style = &self.pack.styles[style];
-                style.apply(self.buf);
+    fn set_style(&mut self, style: Option<usize>) -> Option<usize> {
+        self.current.replace(style?)
+    }
+
+    #[inline(always)]
+    fn sync(&mut self) {
+        if self.synced != self.current {
+            if let Some(style) = self.current.or(self.pack.reset) {
+                self.pack.styles[style].apply(self.buf);
             }
+            self.synced = self.current;
         }
     }
 }
@@ -202,11 +218,14 @@ impl<'a, B: Push<u8>> Styler<'a, B> {
 impl<'a, B: Push<u8>> StylingPush<B> for Styler<'a, B> {
     #[inline(always)]
     fn element<F: FnOnce(&mut Self)>(&mut self, element: Element, f: F) {
+        let style = self.current;
         self.set(element);
         f(self);
+        self.set_style(style);
     }
     #[inline(always)]
     fn batch<F: FnOnce(&mut B)>(&mut self, f: F) {
+        self.sync();
         f(self.buf)
     }
 }

@@ -159,6 +159,7 @@ pub enum Color {
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PlainColor {
+    Default,
     Black,
     Red,
     Green,
