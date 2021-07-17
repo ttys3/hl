@@ -7,6 +7,7 @@ pub mod input;
 pub mod output;
 pub mod settings;
 pub mod theme;
+pub mod themecfg;
 pub mod timeparse;
 pub mod timestamp;
 pub mod types;
@@ -18,7 +19,6 @@ mod filtering;
 mod formatting;
 mod model;
 mod scanning;
-mod themecfg;
 
 // conditional public modules
 #[cfg_attr(unix, path = "signal_unix.rs")]
