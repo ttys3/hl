@@ -50,6 +50,7 @@ pub struct Theme {
 struct Style(Sequence);
 
 impl Style {
+    #[inline]
     pub fn apply(&self, buf: &mut Buf) {
         buf.extend_from_slice(self.0.data())
     }
@@ -129,14 +130,17 @@ impl From<&settings::Style> for Style {
 }
 
 impl<'a> Styler<'a> {
+    #[inline]
     pub fn set(&mut self, buf: &mut Buf, e: Element) {
         self.set_style(buf, self.pack.elements[e])
     }
 
+    #[inline]
     fn reset(&mut self, buf: &mut Buf) {
         self.set_style(buf, None)
     }
 
+    #[inline]
     fn set_style(&mut self, buf: &mut Buf, style: Option<usize>) {
         let style = match style {
             Some(style) => Some(style),
