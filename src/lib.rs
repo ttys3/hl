@@ -18,6 +18,7 @@ mod filtering;
 mod formatting;
 mod model;
 mod scanning;
+mod themecfg;
 
 // conditional public modules
 #[cfg_attr(unix, path = "signal_unix.rs")]

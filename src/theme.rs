@@ -1,14 +1,17 @@
 // std imports
-use std::vec::Vec;
+use std::{borrow::Borrow, vec::Vec};
 
 // third-party imports
 use enum_map::{Enum, EnumMap};
+use platform_dirs::AppDirs;
+use serde::Deserialize;
 
 // local imports
 use crate::{
+    error::*,
     eseq::{Brightness, Color, ColorCode, Mode, Sequence, StyleCode},
     fmtx::Push,
-    settings, types,
+    themecfg, types,
 };
 pub use types::Level;
 
@@ -22,7 +25,8 @@ pub trait StylingPush<B: Push<u8>> {
 // ---
 
 #[repr(u8)]
-#[derive(Enum)]
+#[derive(Enum, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Element {
     Time,
     Level,
@@ -70,31 +74,31 @@ impl Style {
         Sequence::reset().into()
     }
 
-    fn convert_color(color: &settings::Color) -> ColorCode {
+    fn convert_color(color: &themecfg::Color) -> ColorCode {
         match color {
-            settings::Color::Plain(color) => {
+            themecfg::Color::Plain(color) => {
                 let c = match color {
-                    settings::PlainColor::Black => (Color::Black, Brightness::Normal),
-                    settings::PlainColor::Blue => (Color::Blue, Brightness::Normal),
-                    settings::PlainColor::Cyan => (Color::Cyan, Brightness::Normal),
-                    settings::PlainColor::Green => (Color::Green, Brightness::Normal),
-                    settings::PlainColor::Magenta => (Color::Magenta, Brightness::Normal),
-                    settings::PlainColor::Red => (Color::Red, Brightness::Normal),
-                    settings::PlainColor::White => (Color::White, Brightness::Normal),
-                    settings::PlainColor::Yellow => (Color::Yellow, Brightness::Normal),
-                    settings::PlainColor::BrightBlack => (Color::Black, Brightness::Bright),
-                    settings::PlainColor::BrightBlue => (Color::Blue, Brightness::Bright),
-                    settings::PlainColor::BrightCyan => (Color::Cyan, Brightness::Bright),
-                    settings::PlainColor::BrightGreen => (Color::Green, Brightness::Bright),
-                    settings::PlainColor::BrightMagenta => (Color::Magenta, Brightness::Bright),
-                    settings::PlainColor::BrightRed => (Color::Red, Brightness::Bright),
-                    settings::PlainColor::BrightWhite => (Color::White, Brightness::Bright),
-                    settings::PlainColor::BrightYellow => (Color::Yellow, Brightness::Bright),
+                    themecfg::PlainColor::Black => (Color::Black, Brightness::Normal),
+                    themecfg::PlainColor::Blue => (Color::Blue, Brightness::Normal),
+                    themecfg::PlainColor::Cyan => (Color::Cyan, Brightness::Normal),
+                    themecfg::PlainColor::Green => (Color::Green, Brightness::Normal),
+                    themecfg::PlainColor::Magenta => (Color::Magenta, Brightness::Normal),
+                    themecfg::PlainColor::Red => (Color::Red, Brightness::Normal),
+                    themecfg::PlainColor::White => (Color::White, Brightness::Normal),
+                    themecfg::PlainColor::Yellow => (Color::Yellow, Brightness::Normal),
+                    themecfg::PlainColor::BrightBlack => (Color::Black, Brightness::Bright),
+                    themecfg::PlainColor::BrightBlue => (Color::Blue, Brightness::Bright),
+                    themecfg::PlainColor::BrightCyan => (Color::Cyan, Brightness::Bright),
+                    themecfg::PlainColor::BrightGreen => (Color::Green, Brightness::Bright),
+                    themecfg::PlainColor::BrightMagenta => (Color::Magenta, Brightness::Bright),
+                    themecfg::PlainColor::BrightRed => (Color::Red, Brightness::Bright),
+                    themecfg::PlainColor::BrightWhite => (Color::White, Brightness::Bright),
+                    themecfg::PlainColor::BrightYellow => (Color::Yellow, Brightness::Bright),
                 };
                 ColorCode::Plain(c.0, c.1)
             }
-            settings::Color::Palette(code) => ColorCode::Palette(*code),
-            settings::Color::RGB(settings::RGB(r, g, b)) => ColorCode::RGB(*r, *g, *b),
+            themecfg::Color::Palette(code) => ColorCode::Palette(*code),
+            themecfg::Color::RGB(themecfg::RGB(r, g, b)) => ColorCode::RGB(*r, *g, *b),
         }
     }
 }
@@ -111,21 +115,21 @@ impl<T: Into<Sequence>> From<T> for Style {
     }
 }
 
-impl From<&settings::Style> for Style {
-    fn from(style: &settings::Style) -> Self {
+impl From<&themecfg::Style> for Style {
+    fn from(style: &themecfg::Style) -> Self {
         let mut codes = Vec::<StyleCode>::new();
         for mode in &style.modes {
             codes.push(
                 match mode {
-                    settings::Mode::Bold => Mode::Bold,
-                    settings::Mode::Conseal => Mode::Conseal,
-                    settings::Mode::CrossedOut => Mode::CrossedOut,
-                    settings::Mode::Faint => Mode::Faint,
-                    settings::Mode::Italic => Mode::Italic,
-                    settings::Mode::RapidBlink => Mode::RapidBlink,
-                    settings::Mode::Reverse => Mode::Reverse,
-                    settings::Mode::SlowBlink => Mode::SlowBlink,
-                    settings::Mode::Underline => Mode::Underline,
+                    themecfg::Mode::Bold => Mode::Bold,
+                    themecfg::Mode::Conseal => Mode::Conseal,
+                    themecfg::Mode::CrossedOut => Mode::CrossedOut,
+                    themecfg::Mode::Faint => Mode::Faint,
+                    themecfg::Mode::Italic => Mode::Italic,
+                    themecfg::Mode::RapidBlink => Mode::RapidBlink,
+                    themecfg::Mode::Reverse => Mode::Reverse,
+                    themecfg::Mode::SlowBlink => Mode::SlowBlink,
+                    themecfg::Mode::Underline => Mode::Underline,
                 }
                 .into(),
             );
@@ -218,7 +222,7 @@ impl StylePack {
         self.elements[element] = Some(pos);
     }
 
-    fn load(s: &settings::StylePack<settings::Style>) -> Self {
+    fn load(s: &themecfg::StylePack<themecfg::Style>) -> Self {
         let mut result = Self::default();
         result.add(Element::Caller, &Style::from(&s.caller));
         result.add(Element::Comma, &Style::from(&s.comma));
@@ -242,6 +246,8 @@ impl StylePack {
     }
 }
 
+// ---
+
 impl Theme {
     pub fn none() -> Self {
         Self {
@@ -250,7 +256,14 @@ impl Theme {
         }
     }
 
-    pub fn load(s: &settings::Theme) -> Self {
+    pub fn load(app_dirs: &AppDirs, name: &str) -> Result<Self> {
+        Ok(themecfg::Theme::load(app_dirs, name)?.into())
+    }
+}
+
+impl<S: Borrow<themecfg::Theme>> From<S> for Theme {
+    fn from(s: S) -> Self {
+        let s = s.borrow();
         let default = StylePack::load(&s.default);
         let mut packs = EnumMap::default();
         for (level, pack) in &s.levels {
@@ -260,6 +273,8 @@ impl Theme {
     }
 }
 
+// ---
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,8 +283,10 @@ mod tests {
     fn test_theme() {
         let theme = Theme::none();
         let mut buf = Vec::new();
-        theme.apply(&mut buf, &Some(Level::Debug), |buf, styler| {
-            styler.set(buf, Element::Message);
+        theme.apply(&mut buf, &Some(Level::Debug), |s| {
+            s.element(Element::Message, |s| {
+                s.batch(|buf| buf.extend_from_slice(b"hello!"))
+            });
         });
     }
 }
