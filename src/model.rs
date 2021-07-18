@@ -288,12 +288,12 @@ impl FieldSettings {
 
 // ---
 
-pub struct Parser<'s> {
-    settings: &'s ParserSettings,
+pub struct Parser {
+    settings: ParserSettings,
 }
 
-impl<'s> Parser<'s> {
-    pub fn new(settings: &'s ParserSettings) -> Self {
+impl Parser {
+    pub fn new(settings: ParserSettings) -> Self {
         Self { settings }
     }
 

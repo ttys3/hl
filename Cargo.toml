@@ -57,6 +57,7 @@ version = "0"
 features = ["handleapi"]
 
 [dev-dependencies]
+byte-strings = "0"
 criterion = "0"
 diligent-date-parser = "0"
 pipe = "0"
@@ -71,19 +72,19 @@ codegen-units = 1
 lto = true
 
 [[bench]]
-name = "re_match"
+name = "regex"
 harness = false
 
 [[bench]]
-name = "ts_parse"
+name = "ts-parse"
 harness = false
 
 [[bench]]
-name = "ts_format"
+name = "ts-format"
 harness = false
 
 [[bench]]
-name = "wild_match"
+name = "wildcard"
 harness = false
 
 [[bench]]
@@ -91,5 +92,5 @@ name = "theme"
 harness = false
 
 [[bench]]
-name = "app"
+name = "parse-and-format"
 harness = false
