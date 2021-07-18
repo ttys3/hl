@@ -9,20 +9,18 @@ default:
     foreground: magenta
   message:
     foreground: bright-white
-  field-key:
-    foreground: green
-  equal-sign:
+  field:
     foreground: bright-black
+  key:
+    foreground: green
   ellipsis:
     foreground: bright-black
-  at-sign:
-    foreground: bright-black
-  'null':
-    foreground: yellow
-  boolean:
-    foreground: yellow
   number:
     foreground: cyan
+  boolean:
+    foreground: yellow
+  'null':
+    foreground: yellow
 levels:
   debug:
     level:

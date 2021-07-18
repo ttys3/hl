@@ -27,8 +27,12 @@ macro_rules! collection {
     }};
 }
 
+// ---
+
 #[global_allocator]
 static GLOBAL: &StatsAlloc<System> = &INSTRUMENTED_SYSTEM;
+
+// ---
 
 fn benchmark(c: &mut Criterion) {
     let mut c = c.benchmark_group("theme");
@@ -197,6 +201,8 @@ fn benchmark(c: &mut Criterion) {
     });
     println!("allocations at 1 ({:?} iterations): {:#?}", n1, c1);
 }
+
+// ---
 
 criterion_group!(benches, benchmark);
 criterion_main!(benches);
