@@ -4,6 +4,7 @@ use chrono::{DateTime, FixedOffset};
 
 // ---
 
+#[derive(Debug)]
 pub struct Timestamp<'a>(&'a str, Option<Option<DateTime<FixedOffset>>>);
 
 impl<'a> Timestamp<'a> {
