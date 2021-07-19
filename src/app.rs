@@ -179,8 +179,8 @@ impl App {
     ) -> Result<()> {
         let param_hash = hex::encode(self.parameters_hash()?);
         let cache_dir = directories::BaseDirs::new()
-            .and_then(|d| Some(d.cache_dir().into()))
-            .unwrap_or(PathBuf::from(".cache"))
+            .map(|d| d.cache_dir().into())
+            .unwrap_or_else(|| PathBuf::from(".cache"))
             .join("github.com/pamburus/hl")
             .join(param_hash);
         fs::create_dir_all(&cache_dir)?;
