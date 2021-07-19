@@ -15,6 +15,7 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::fs::File;
 use std::io::{Read, Write};
+use std::iter::empty;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -37,7 +38,7 @@ use crate::index_capnp as schema;
 use crate::input::Input;
 use crate::model::{Parser, ParserSettings, RawRecord};
 use crate::scanning::{BufFactory, Scanner, Segment, SegmentBuf, SegmentBufFactory};
-use crate::settings::Fields;
+use crate::settings::PredefinedFields;
 use crate::types::Level;
 
 // types
@@ -62,14 +63,14 @@ impl Indexer {
         buffer_size: u32,
         max_message_size: u32,
         dir: PathBuf,
-        fields: &Fields,
+        fields: &PredefinedFields,
     ) -> Self {
         Self {
             concurrency,
             buffer_size,
             max_message_size,
             dir,
-            parser: Parser::new(ParserSettings::new(&fields, false)),
+            parser: Parser::new(ParserSettings::new(&fields, empty(), false)),
         }
     }
 

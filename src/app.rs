@@ -89,7 +89,8 @@ impl App {
         let sfi = Arc::new(SegmentBufFactory::new(self.options.buffer_size.try_into()?));
         let bfo = BufFactory::new(self.options.buffer_size.try_into()?);
         let parser = Parser::new(ParserSettings::new(
-            &self.options.fields.settings,
+            &self.options.fields.settings.predefined,
+            &self.options.fields.settings.ignore,
             self.options.filter.since.is_some() || self.options.filter.until.is_some(),
         ));
         thread::scope(|scope| -> Result<()> {
@@ -189,7 +190,7 @@ impl App {
             self.options.buffer_size.try_into()?,
             self.options.max_message_size.try_into()?,
             cache_dir,
-            &self.options.fields.settings,
+            &self.options.fields.settings.predefined,
         );
 
         let inputs = inputs
@@ -428,7 +429,11 @@ impl App {
         let mut hasher = Sha256::new();
         bincode::serialize_into(
             &mut hasher,
-            &(self.options.buffer_size, self.options.max_message_size),
+            &(
+                &self.options.buffer_size,
+                &self.options.max_message_size,
+                &self.options.fields.settings.predefined,
+            ),
         )?;
         Ok(hasher.finalize())
     }
