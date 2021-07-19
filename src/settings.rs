@@ -7,7 +7,7 @@ use chrono_tz::Tz;
 use config::{Config, File, FileFormat};
 use derive_deref::Deref;
 use platform_dirs::AppDirs;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 // local imports
 use crate::error::Error;
@@ -52,17 +52,17 @@ impl Default for Settings {
 
 // ---
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Fields {
-    pub predefined: PrefedinedFields,
+    pub predefined: PredefinedFields,
     pub ignore: Vec<String>,
     pub hide: Vec<String>,
 }
 
 // ---
 
-#[derive(Debug, Deserialize)]
-pub struct PrefedinedFields {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PredefinedFields {
     pub time: TimeField,
     pub level: LevelField,
     pub message: MessageField,
@@ -72,19 +72,19 @@ pub struct PrefedinedFields {
 
 // ---
 
-#[derive(Debug, Deserialize, Deref)]
+#[derive(Debug, Serialize, Deserialize, Deref)]
 pub struct TimeField(pub Field);
 
 // ---
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LevelField {
     pub variants: Vec<LevelFieldVariant>,
 }
 
 // ---
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LevelFieldVariant {
     pub names: Vec<String>,
     pub values: HashMap<Level, Vec<String>>,
@@ -92,22 +92,22 @@ pub struct LevelFieldVariant {
 
 // ---
 
-#[derive(Debug, Deserialize, Deref)]
+#[derive(Debug, Serialize, Deserialize, Deref)]
 pub struct MessageField(Field);
 
 // ---
 
-#[derive(Debug, Deserialize, Deref)]
+#[derive(Debug, Serialize, Deserialize, Deref)]
 pub struct LoggerField(Field);
 
 // ---
 
-#[derive(Debug, Deserialize, Deref)]
+#[derive(Debug, Serialize, Deserialize, Deref)]
 pub struct CallerField(Field);
 
 // ---
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Field {
     pub names: Vec<String>,
 }
