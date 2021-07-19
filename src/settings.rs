@@ -1,13 +1,14 @@
 // std imports
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::include_str;
+use std::io::Write;
 
 // third-party imports
 use chrono_tz::Tz;
 use config::{Config, File, FileFormat};
 use derive_deref::Deref;
 use platform_dirs::AppDirs;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
 // local imports
 use crate::error::Error;
@@ -87,6 +88,7 @@ pub struct LevelField {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LevelFieldVariant {
     pub names: Vec<String>,
+    #[serde(serialize_with = "ordered_map_serialize")]
     pub values: HashMap<Level, Vec<String>>,
 }
 
@@ -113,3 +115,14 @@ pub struct Field {
 }
 
 // ---
+
+fn ordered_map_serialize<K: Eq + PartialEq + Ord + PartialOrd + Serialize, V: Serialize, S>(
+    value: &HashMap<K, V>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let ordered: BTreeMap<_, _> = value.iter().collect();
+    ordered.serialize(serializer)
+}
