@@ -13,7 +13,6 @@ use closure::closure;
 use crossbeam_channel as channel;
 use crossbeam_channel::RecvError;
 use crossbeam_utils::thread;
-use generic_array::{typenum::U32, GenericArray};
 use itertools::izip;
 use serde_json as json;
 use sha2::{Digest, Sha256};
@@ -425,7 +424,7 @@ impl App {
         Ok(())
     }
 
-    fn parameters_hash(&self) -> Result<GenericArray<u8, U32>> {
+    fn parameters_hash(&self) -> Result<[u8; 32]> {
         let mut hasher = Sha256::new();
         bincode::serialize_into(
             &mut hasher,
@@ -435,7 +434,7 @@ impl App {
                 &self.options.fields.settings.predefined,
             ),
         )?;
-        Ok(hasher.finalize())
+        Ok(hasher.finalize().into())
     }
 }
 
