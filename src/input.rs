@@ -3,6 +3,7 @@ use std::convert::TryInto;
 use std::fs::File;
 use std::io::{self, stdin, BufReader, Read, Seek, SeekFrom};
 use std::mem::size_of_val;
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -225,7 +226,7 @@ impl BlockLines<IndexedInput> {
         let (buf, total) = {
             let block = &mut block;
             let mut buf = if let Some(pool) = &block.buf_pool {
-                pool.checkout()
+                pool.checkout() // TODO: implement checkin
             } else {
                 Vec::new()
             };
@@ -240,7 +241,7 @@ impl BlockLines<IndexedInput> {
         };
         Ok(Self {
             block,
-            buf: Arc::new(buf),
+            buf: Arc::new(buf), // TODO: optimize allocations
             total,
             current: 0,
             byte: 0,
@@ -282,7 +283,7 @@ impl Iterator for BlockLines<IndexedInput> {
         self.byte += l;
         self.current += 1;
 
-        Some(BlockLine::new(self.buf.clone(), offset, offset + l))
+        Some(BlockLine::new(self.buf.clone(), offset..offset + l))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -299,25 +300,24 @@ impl Iterator for BlockLines<IndexedInput> {
 
 pub struct BlockLine {
     buf: Arc<Vec<u8>>,
-    begin: usize,
-    end: usize,
+    range: Range<usize>,
 }
 
 impl BlockLine {
-    pub fn new(buf: Arc<Vec<u8>>, begin: usize, end: usize) -> Self {
-        Self { buf, begin, end }
+    pub fn new(buf: Arc<Vec<u8>>, range: Range<usize>) -> Self {
+        Self { buf, range }
     }
 
     pub fn bytes(&self) -> &[u8] {
-        &self.buf[self.begin..self.end]
+        &self.buf[self.range]
     }
 
     pub fn offset(&self) -> usize {
-        self.begin
+        self.range.start
     }
 
     pub fn len(&self) -> usize {
-        self.end - self.begin
+        self.range.end - self.range.start
     }
 }
 
