@@ -53,6 +53,15 @@ pub struct Timestamp {
     nsec: u32,
 }
 
+impl From<(i64, u32)> for Timestamp {
+    fn from(value: (i64, u32)) -> Self {
+        Self {
+            sec: value.0,
+            nsec: value.1,
+        }
+    }
+}
+
 // ---
 
 /// Allows log files indexing to enable message sorting.
@@ -265,12 +274,7 @@ impl Indexer {
                             }
                             None => (),
                         }
-                        ts = rec.ts.and_then(|ts| ts.parse()).and_then(|ts| {
-                            Some(Timestamp {
-                                sec: ts.timestamp(),
-                                nsec: ts.timestamp_subsec_nanos(),
-                            })
-                        });
+                        ts = rec.ts.and_then(|ts| ts.unix_utc()).map(|ts| ts.into());
                         if ts < prev_ts {
                             sorted = false;
                         }

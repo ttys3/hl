@@ -1,6 +1,7 @@
 // std imports
+use std::cmp::{max, Reverse};
 use std::collections::VecDeque;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::fs;
 use std::io::Write;
 use std::iter::once;
@@ -11,8 +12,7 @@ use std::sync::Arc;
 // third-party imports
 use chrono::FixedOffset;
 use closure::closure;
-use crossbeam_channel as channel;
-use crossbeam_channel::RecvError;
+use crossbeam_channel::{self as channel, Receiver, RecvError, Sender};
 use crossbeam_utils::thread;
 use itertools::izip;
 use serde_json as json;
@@ -63,11 +63,7 @@ impl App {
         Self { options }
     }
 
-    pub fn run(
-        &self,
-        inputs: Vec<InputReference>,
-        output: &mut (dyn Write + Send + Sync),
-    ) -> Result<()> {
+    pub fn run(&self, inputs: Vec<InputReference>, output: &mut (dyn Write + Send + Sync)) -> Result<()> {
         if self.options.sort {
             self.sort(inputs, output)
         } else {
@@ -75,11 +71,7 @@ impl App {
         }
     }
 
-    fn cat(
-        &self,
-        inputs: Vec<InputReference>,
-        output: &mut (dyn Write + Send + Sync),
-    ) -> Result<()> {
+    fn cat(&self, inputs: Vec<InputReference>, output: &mut (dyn Write + Send + Sync)) -> Result<()> {
         let inputs = inputs
             .into_iter()
             .map(|x| x.into())
@@ -94,10 +86,7 @@ impl App {
             // prepare receive/transmit channels for input data
             let (txi, rxi): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded(1)).unzip();
             // prepare receive/transmit channels for output data
-            let (txo, rxo): (Vec<_>, Vec<_>) = (0..n)
-                .into_iter()
-                .map(|_| channel::bounded::<Vec<u8>>(1))
-                .unzip();
+            let (txo, rxo): (Vec<_>, Vec<_>) = (0..n).into_iter().map(|_| channel::bounded::<Vec<u8>>(1)).unzip();
             // spawn reader thread
             let reader = scope.spawn(closure!(clone sfi, |_| -> Result<()> {
                 let mut sn: usize = 0;
@@ -161,11 +150,7 @@ impl App {
         Ok(())
     }
 
-    fn sort(
-        &self,
-        inputs: Vec<InputReference>,
-        output: &mut (dyn Write + Send + Sync),
-    ) -> Result<()> {
+    fn sort(&self, inputs: Vec<InputReference>, output: &mut (dyn Write + Send + Sync)) -> Result<()> {
         let param_hash = hex::encode(self.parameters_hash()?);
         let cache_dir = directories::BaseDirs::new()
             .map(|d| d.cache_dir().into())
@@ -215,8 +200,7 @@ impl App {
             // prepare transmit/receive channels for data produced by pusher thread
             let (txp, rxp): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded(1)).unzip();
             // prepare transmit/receive channels for data produced by worker threads
-            let (txw, rxw): (Vec<_>, Vec<_>) =
-                (0..n).map(|_| channel::bounded::<OutputBlock>(1)).unzip();
+            let (txw, rxw): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded::<OutputBlock>(1)).unzip();
             // spawn pusher thread
             let pusher = scope.spawn(closure!(|_| -> Result<()> {
                 let mut blocks: Vec<_> = inputs
@@ -234,9 +218,7 @@ impl App {
                                 return None;
                             }
                         }
-                        src.stat
-                            .ts_min_max
-                            .map(|(ts_min, ts_max)| (block, ts_min, ts_max, i))
+                        src.stat.ts_min_max.map(|(ts_min, ts_max)| (block, ts_min, ts_max, i))
                     })
                     .collect();
 
@@ -255,73 +237,84 @@ impl App {
                 //         block.offset(),
                 //     )?;
                 // }
-                let mut sn: usize = 0;
+                let mut output = StripedSender::new(txp);
                 for (block, ts_min, ts_max, i) in blocks {
-                    if let Err(_) = txp[sn % n].send((block, i)) {
+                    if output.send((block, i)).is_none() {
                         break;
                     }
-                    sn += 1;
                 }
                 Ok(())
             }));
             // spawn worker threads
-            let workers = Vec::with_capacity(n);
+            let mut workers = Vec::with_capacity(n);
             for (rxp, txw) in izip!(rxp, txw) {
-                workers.push(scope.spawn(move |_| -> Result<()> {
+                workers.push(scope.spawn(closure!(ref parser, |_| -> Result<()> {
                     let mut formatter = self.formatter();
                     for (block, i) in rxp.iter() {
-                        let mut buf = Vec::with_capacity(block.size().try_into()? * 2);
-                        let mut ranges = Vec::with_capacity(block.lines_valid().try_into()? * 2);
+                        let mut buf = Vec::with_capacity(2 * usize::try_from(block.size())?);
+                        let mut items = Vec::with_capacity(2 * usize::try_from(block.lines_valid())?);
                         for line in block.into_lines()? {
                             let record = parser.parse(json::from_slice(line.bytes())?);
                             if record.matches(&self.options.filter) {
-                                formatter.format_record(&mut buf, &record)
+                                let offset = buf.len();
+                                formatter.format_record(&mut buf, &record);
+                                items.push((record.ts.unwrap().unix_utc().unwrap().into(), offset..buf.len()));
                             }
                         }
 
                         let buf = Arc::new(buf);
-                        if txw.send(OutputBlock { buf, ranges }).is_err() {
+                        if txw.send(OutputBlock { buf, items }).is_err() {
                             break;
                         }
                     }
                     Ok(())
-                }));
+                })));
             }
-            // setup workers pool
-            // [     ]
-            //   [ ]
-            let workers = SQPool::new_with_factory(|| {
-                scope.spawn(|| {});
-            });
-            // spawn dispatcher thread
-            let dispatcher = scope.spawn(closure!(|_| -> Result<()> {
-                let mut sn = 0;
-                let mut workspace = VecDeque::new();
-                // TODO: use pool of dynamically allocated parser threads and their rx/tx channels.
-                // TODO: allocate new parser from the pool when current timestamp goes beyond start timestamp of the block.
-                // TODO: deallocate parser and thread when iterator of its output stream ends.
-                let (mut ts_i, mut ts_o) = (None, None);
+            // spawn merger thread
+            let merger = scope.spawn(|_| -> Result<()> {
+                let mut input = StripedReceiver::new(rxw);
+                let (mut tsi, mut tso) = (None, None);
+                let mut workspace = Vec::new();
+
                 loop {
-                    let workspace
-                    match rxs[sn % n].recv() {
-                        Ok(lines) => {
-                            output.write_all(&buf[..])?;
-                            bfo.recycle(buf);
-                        }
-                        Err(RecvError) => {
-                            break;
+                    while tso >= tsi {
+                        if let Some(block) = input.next() {
+                            let mut tail = block.into_lines();
+                            let head = tail.next();
+                            if let Some(head) = head {
+                                tsi = Some(head.0.clone());
+                                workspace.push((head, tail));
+                            }
                         }
                     }
-                    sn += 1;
+
+                    if workspace.len() == 0 {
+                        break;
+                    }
+
+                    workspace.sort_by_key(|v| Reverse((v.0).0));
+                    let k = workspace.len() - 1;
+                    let item = &mut workspace[k];
+                    let ts = (item.0).0;
+                    if Some(ts) >= tsi {
+                        continue;
+                    }
+                    output.write_all((item.0).1.bytes())?;
+                    tso = Some(ts);
+                    match item.1.next() {
+                        Some(head) => item.0 = head,
+                        None => drop(workspace.swap_remove(k)),
+                    }
                 }
+
                 Ok(())
-            }));
+            });
 
             pusher.join().unwrap()?;
-            for scanner in scanners {
-                scanner.join().unwrap()?;
+            for worker in workers {
+                worker.join().unwrap()?;
             }
-            sorter.join().unwrap()?;
+            merger.join().unwrap()?;
 
             Ok(())
         })
@@ -561,11 +554,7 @@ impl<'a> SegmentProcesor<'a> {
                     self.formatter.format_record(buf, &record);
                 }
             }
-            let remainder = if some {
-                &data[stream.byte_offset()..]
-            } else {
-                data
-            };
+            let remainder = if some { &data[stream.byte_offset()..] } else { data };
             if remainder.len() != 0 && self.filter.is_empty() {
                 buf.extend_from_slice(remainder);
                 buf.push(b'\n');
@@ -578,26 +567,64 @@ impl<'a> SegmentProcesor<'a> {
 
 struct OutputBlock {
     buf: Arc<Vec<u8>>,
-    ranges: Vec<Range<usize>>,
+    items: Vec<(Timestamp, Range<usize>)>,
 }
 
 impl OutputBlock {
-    pub fn new(buf: Arc<Vec<u8>>, ranges: Vec<Range<usize>>) -> Self {
-        Self { buf, ranges }
-    }
-
-    pub fn lines<'a>(&'a self) -> impl Iterator<Item = BlockLine> + 'a {
+    pub fn lines<'a>(&'a self) -> impl Iterator<Item = (Timestamp, BlockLine)> + 'a {
         let buf = self.buf.clone();
-        self.ranges
+        self.items
             .iter()
-            .map(move |range| BlockLine::new(buf.clone(), range.clone()))
+            .map(move |(ts, range)| (ts.clone(), BlockLine::new(buf.clone(), range.clone())))
     }
 
-    pub fn into_lines(self) -> impl Iterator<Item = BlockLine> {
+    pub fn into_lines(self) -> impl Iterator<Item = (Timestamp, BlockLine)> {
         let buf = self.buf;
-        self.ranges
+        self.items
             .into_iter()
-            .map(move |range| BlockLine::new(buf.clone(), range.clone()))
+            .map(move |(ts, range)| (ts, BlockLine::new(buf.clone(), range.clone())))
+    }
+}
+
+// ---
+
+struct StripedReceiver<T> {
+    input: Vec<Receiver<T>>,
+    sn: usize,
+}
+
+impl<T> StripedReceiver<T> {
+    fn new(input: Vec<Receiver<T>>) -> Self {
+        Self { input, sn: 0 }
+    }
+}
+
+impl<T> Iterator for StripedReceiver<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let result = self.input[self.sn].recv().ok();
+        self.sn = (self.sn + 1) % self.input.len();
+        result
+    }
+}
+
+// ---
+
+struct StripedSender<T> {
+    output: Vec<Sender<T>>,
+    sn: usize,
+}
+
+impl<T> StripedSender<T> {
+    fn new(output: Vec<Sender<T>>) -> Self {
+        Self { output, sn: 0 }
+    }
+
+    fn send(&mut self, value: T) -> Option<()> {
+        self.output[self.sn].send(value).ok()?;
+        self.sn = (self.sn + 1) % self.output.len();
+        Some(())
     }
 }
 
