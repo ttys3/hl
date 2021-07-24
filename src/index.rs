@@ -47,6 +47,14 @@ pub type Reader = dyn Read + Send + Sync;
 
 // ---
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct Timestamp {
+    sec: i64,
+    nsec: u32,
+}
+
+// ---
+
 /// Allows log files indexing to enable message sorting.
 pub struct Indexer {
     concurrency: usize,
@@ -231,7 +239,7 @@ impl Indexer {
         let mut sorted = true;
         let mut prev_ts = None;
         let mut lines =
-            Vec::<(Option<(i64, u32)>, u32, u32)>::with_capacity(segment.data().len() / 512);
+            Vec::<(Option<Timestamp>, u32, u32)>::with_capacity(segment.data().len() / 512);
         let mut offset = 0;
         for (i, data) in segment.data().split(|c| *c == b'\n').enumerate() {
             let data_len = data.len();
@@ -257,10 +265,12 @@ impl Indexer {
                             }
                             None => (),
                         }
-                        ts = rec
-                            .ts
-                            .and_then(|ts| ts.parse())
-                            .and_then(|ts| Some((ts.timestamp(), ts.timestamp_subsec_nanos())));
+                        ts = rec.ts.and_then(|ts| ts.parse()).and_then(|ts| {
+                            Some(Timestamp {
+                                sec: ts.timestamp(),
+                                nsec: ts.timestamp_subsec_nanos(),
+                            })
+                        });
                         if ts < prev_ts {
                             sorted = false;
                         }
@@ -376,8 +386,14 @@ impl Index {
             lines_invalid: lines.get_invalid(),
             ts_min_max: if flags & schema::FLAG_HAS_TIMESTAMPS != 0 {
                 Some((
-                    (ts.get_min().get_sec(), ts.get_min().get_nsec()),
-                    (ts.get_max().get_sec(), ts.get_max().get_nsec()),
+                    Timestamp {
+                        sec: ts.get_min().get_sec(),
+                        nsec: ts.get_min().get_nsec(),
+                    },
+                    Timestamp {
+                        sec: ts.get_max().get_sec(),
+                        nsec: ts.get_max().get_nsec(),
+                    },
                 ))
             } else {
                 None
@@ -393,11 +409,11 @@ impl Index {
         if let Some((min, max)) = stat.ts_min_max {
             let mut timestamps = index.init_timestamps();
             let mut ts_min = timestamps.reborrow().init_min();
-            ts_min.set_sec(min.0);
-            ts_min.set_nsec(min.1);
+            ts_min.set_sec(min.sec);
+            ts_min.set_nsec(min.nsec);
             let mut ts_max = timestamps.init_max();
-            ts_max.set_sec(max.0);
-            ts_max.set_nsec(max.1);
+            ts_max.set_sec(max.sec);
+            ts_max.set_nsec(max.nsec);
         }
     }
 
@@ -558,7 +574,7 @@ pub struct Stat {
     pub flags: u64,
     pub lines_valid: u64,
     pub lines_invalid: u64,
-    pub ts_min_max: Option<((i64, u32), (i64, u32))>,
+    pub ts_min_max: Option<(Timestamp, Timestamp)>,
 }
 
 impl Stat {
@@ -573,7 +589,7 @@ impl Stat {
     }
 
     /// Adds information about a single valid line.
-    pub fn add_valid(&mut self, ts: Option<(i64, u32)>, flags: u64) {
+    pub fn add_valid(&mut self, ts: Option<Timestamp>, flags: u64) {
         self.ts_min_max = min_max_opt(self.ts_min_max, ts.and_then(|ts| Some((ts, ts))));
         self.flags |= flags;
         self.lines_valid += 1;

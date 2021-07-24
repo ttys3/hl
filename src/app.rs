@@ -4,6 +4,7 @@ use std::convert::TryInto;
 use std::fs;
 use std::io::Write;
 use std::iter::once;
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -21,9 +22,10 @@ use sha2::{Digest, Sha256};
 use crate::datefmt::{DateTimeFormat, DateTimeFormatter};
 use crate::error::*;
 use crate::formatting::RecordFormatter;
-use crate::index::Indexer;
-use crate::input::{ConcatReader, InputReference};
+use crate::index::{Indexer, Timestamp};
+use crate::input::{BlockLine, BlockLines, ConcatReader, IndexedInput, InputReference};
 use crate::model::{Filter, Parser, ParserSettings, RawRecord};
+use crate::pool::SQPool;
 use crate::scanning::{BufFactory, Scanner, Segment, SegmentBufFactory};
 use crate::settings::Fields;
 use crate::theme::Theme;
@@ -216,43 +218,120 @@ impl App {
         }
         */
 
-        let mut blocks: Vec<_> = inputs
-            .into_iter()
-            .enumerate()
-            .map(|(i, input)| input.into_blocks().map(move |block| (block, i)))
-            .flatten()
-            .filter_map(|(block, i)| {
-                let src = block.source_block();
-                if src.stat.lines_valid == 0 {
-                    return None;
-                }
-                if let Some(level) = self.options.filter.level {
-                    if !src.match_level(level) {
-                        return None;
+        // if blocks.len() == 0 {
+        //     return Ok(());
+        // }
+
+        let n = self.options.concurrency;
+        let parser = Parser::new(ParserSettings::new(
+            &self.options.fields.settings.predefined,
+            &self.options.fields.settings.ignore,
+            self.options.filter.since.is_some() || self.options.filter.until.is_some(),
+        ));
+        thread::scope(|scope| -> Result<()> {
+            // prepare transmit/receive channels for data produced by pusher thread
+            let (txp, rxp): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded(1)).unzip();
+            // prepare transmit/receive channels for data produced by worker threads
+            let (txw, rxw): (Vec<_>, Vec<_>) =
+                (0..n).map(|_| channel::bounded::<OutputBlock>(1)).unzip();
+            // spawn pusher thread
+            let pusher = scope.spawn(closure!(|_| -> Result<()> {
+                let mut blocks: Vec<_> = inputs
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, input)| input.into_blocks().map(move |block| (block, i)))
+                    .flatten()
+                    .filter_map(|(block, i)| {
+                        let src = block.source_block();
+                        if src.stat.lines_valid == 0 {
+                            return None;
+                        }
+                        if let Some(level) = self.options.filter.level {
+                            if !src.match_level(level) {
+                                return None;
+                            }
+                        }
+                        src.stat
+                            .ts_min_max
+                            .map(|(ts_min, ts_max)| (block, ts_min, ts_max, i))
+                    })
+                    .collect();
+
+                blocks.sort_by(|a, b| (a.1, a.2, a.3).partial_cmp(&(b.1, b.2, b.3)).unwrap());
+
+                // for (block, ts_min, ts_max, i) in &blocks {
+                //     writeln!(
+                //         output,
+                //         "|{:10}.{:09}|{:10}.{:09} {:7} @[{}]{:9}",
+                //         ts_min.0,
+                //         ts_min.1,
+                //         ts_max.0,
+                //         ts_max.1,
+                //         block.size(),
+                //         i,
+                //         block.offset(),
+                //     )?;
+                // }
+                let mut sn: usize = 0;
+                for (block, ts_min, ts_max, i) in blocks {
+                    if let Err(_) = txp[sn % n].send((block, ts_min, ts_max, i)) {
+                        break;
                     }
+                    sn += 1;
                 }
-                src.stat
-                    .ts_min_max
-                    .map(|(ts_min, ts_max)| (block, ts_min, ts_max, i))
-            })
-            .collect();
+                Ok(())
+            }));
+            // spawn worker threads
+            let workers = Vec::with_capacity(n);
+            for (rxp, txw) in izip!(rxp, txw) {
+                scanners.push(scope.spawn(move |_| -> Result<()> {
+                    for (block, ts_min, ts_max, i) in rxp.iter() {
+                        if txs.send((ts_min, ts_max, i, block.into_lines()?)).is_err() {
+                            break;
+                        }
+                    }
+                    Ok(())
+                }));
+            }
+            // setup workers pool
+            // [     ]
+            //   [ ]
+            let workers = SQPool::new_with_factory(|| {
+                scope.spawn(|| {});
+            });
+            // spawn dispatcher thread
+            let dispatcher = scope.spawn(closure!(|_| -> Result<()> {
+                let mut sn = 0;
+                let mut workspace = VecDeque::new();
+                // TODO: use pool of dynamically allocated parser threads and their rx/tx channels.
+                // TODO: allocate new parser from the pool when current timestamp goes beyond start timestamp of the block.
+                // TODO: deallocate parser and thread when iterator of its output stream ends.
+                let (mut ts_i, mut ts_o) = (None, None);
+                loop {
+                    let workspace
+                    match rxs[sn % n].recv() {
+                        Ok(lines) => {
+                            output.write_all(&buf[..])?;
+                            bfo.recycle(buf);
+                        }
+                        Err(RecvError) => {
+                            break;
+                        }
+                    }
+                    sn += 1;
+                }
+                Ok(())
+            }));
 
-        blocks.sort_by(|a, b| (a.1, a.2, a.3).partial_cmp(&(b.1, b.2, b.3)).unwrap());
+            pusher.join().unwrap()?;
+            for scanner in scanners {
+                scanner.join().unwrap()?;
+            }
+            sorter.join().unwrap()?;
 
-        for (block, ts_min, ts_max, i) in blocks {
-            writeln!(
-                output,
-                "|{:10}.{:09}|{:10}.{:09} {:7} @[{}]{:9}",
-                ts_min.0,
-                ts_min.1,
-                ts_max.0,
-                ts_max.1,
-                block.size(),
-                i,
-                block.offset(),
-            )?;
-        }
-
+            Ok(())
+        })
+        .unwrap()?;
         /*
                 let batch = |ts_min| {
                     let mut ts_next = ts_min;
@@ -480,6 +559,33 @@ impl<'a> SegmentProcesor<'a> {
                 buf.push(b'\n');
             }
         }
+    }
+}
+
+// ---
+
+struct OutputBlock {
+    buf: Arc<Vec<u8>>,
+    ranges: Vec<Range<usize>>,
+}
+
+impl OutputBlock {
+    pub fn new(buf: Arc<Vec<u8>>, ranges: Vec<Range<usize>>) -> Self {
+        Self { buf, ranges }
+    }
+
+    pub fn lines<'a>(&'a self) -> impl Iterator<Item = BlockLine> + 'a {
+        let buf = self.buf.clone();
+        self.ranges
+            .iter()
+            .map(move |range| BlockLine::new(buf.clone(), range.clone()))
+    }
+
+    pub fn into_lines(self) -> impl Iterator<Item = BlockLine> {
+        let buf = self.buf;
+        self.ranges
+            .into_iter()
+            .map(move |range| BlockLine::new(buf.clone(), range.clone()))
     }
 }
 
