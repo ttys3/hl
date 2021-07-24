@@ -87,13 +87,12 @@ impl App {
             let (txo, rxo): (Vec<_>, Vec<_>) = (0..n).into_iter().map(|_| channel::bounded::<Vec<u8>>(1)).unzip();
             // spawn reader thread
             let reader = scope.spawn(closure!(clone sfi, |_| -> Result<()> {
-                let mut sn: usize = 0;
+                let mut tx = StripedSender::new(txi);
                 let scanner = Scanner::new(sfi, "\n".to_string());
                 for item in scanner.items(&mut input).with_max_segment_size(self.options.max_message_size) {
-                    if let Err(_) = txi[sn % n].send(item?) {
+                    if tx.send(item?).is_none() {
                         break;
                     }
-                    sn += 1;
                 }
                 Ok(())
             }));
@@ -123,18 +122,9 @@ impl App {
             }
             // spawn writer thread
             let writer = scope.spawn(closure!(ref bfo, |_| -> Result<()> {
-                let mut sn = 0;
-                loop {
-                    match rxo[sn % n].recv() {
-                        Ok(buf) => {
-                            output.write_all(&buf[..])?;
-                            bfo.recycle(buf);
-                        }
-                        Err(RecvError) => {
-                            break;
-                        }
-                    }
-                    sn += 1;
+                for buf in StripedReceiver::new(rxo) {
+                    output.write_all(&buf[..])?;
+                    bfo.recycle(buf);
                 }
                 Ok(())
             }));
@@ -425,9 +415,12 @@ impl<T> Iterator for StripedReceiver<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let result = self.input[self.sn].recv().ok();
+        let item = match self.input[self.sn].recv() {
+            Ok(item) => Some(item),
+            Err(RecvError) => None,
+        }?;
         self.sn = (self.sn + 1) % self.input.len();
-        result
+        Some(item)
     }
 }
 
