@@ -13,6 +13,7 @@ use closure::closure;
 use crossbeam_channel::{self as channel, Receiver, RecvError, Sender};
 use crossbeam_utils::thread;
 use itertools::izip;
+use platform_dirs::AppDirs;
 use serde_json as json;
 use sha2::{Digest, Sha256};
 
@@ -45,6 +46,7 @@ pub struct Options {
     pub hide_empty_fields: bool,
     pub sort: bool,
     pub dump_index: bool,
+    pub app_dirs: Option<AppDirs>,
 }
 
 pub struct FieldOptions {
@@ -141,10 +143,12 @@ impl App {
     fn sort(&self, inputs: Vec<InputReference>, output: &mut (dyn Write + Send + Sync)) -> Result<()> {
         let mut output = BufWriter::new(output);
         let param_hash = hex::encode(self.parameters_hash()?);
-        let cache_dir = directories::BaseDirs::new()
-            .map(|d| d.cache_dir().into())
+        let cache_dir = self
+            .options
+            .app_dirs
+            .as_ref()
+            .map(|dirs| dirs.cache_dir.clone())
             .unwrap_or_else(|| PathBuf::from(".cache"))
-            .join("github.com/pamburus/hl")
             .join(param_hash);
         fs::create_dir_all(&cache_dir)?;
         let indexer = Indexer::new(
