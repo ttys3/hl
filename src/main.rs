@@ -154,6 +154,10 @@ struct Opt {
     /// Output file.
     #[structopt(long, short = "o")]
     output: Option<String>,
+
+    /// Dump index metadata and exit.
+    #[structopt(long)]
+    dump_index: bool,
 }
 
 arg_enum! {
@@ -326,6 +330,7 @@ fn run() -> Result<()> {
         time_zone: tz,
         hide_empty_fields,
         sort: opt.sort,
+        dump_index: opt.dump_index,
     });
 
     // Configure input.
