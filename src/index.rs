@@ -49,8 +49,8 @@ pub type Reader = dyn Read + Send + Sync;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Timestamp {
-    sec: i64,
-    nsec: u32,
+    pub sec: i64,
+    pub nsec: u32,
 }
 
 impl From<(i64, u32)> for Timestamp {
@@ -181,9 +181,7 @@ impl Indexer {
                 scope.spawn(closure!(ref bfo, ref sfi, |_| {
                     for segment in rxi.iter() {
                         let ((stat, chronology), segment) = match segment {
-                            Segment::Complete(segment) => {
-                                (self.process_segement(&segment), segment)
-                            }
+                            Segment::Complete(segment) => (self.process_segement(&segment), segment),
                             Segment::Incomplete(segment, _) => {
                                 let mut stat = Stat::new();
                                 stat.add_invalid();
@@ -207,9 +205,7 @@ impl Indexer {
                         path: path.to_string_lossy().into(),
                         modified: ts(metadata.modified()?),
                         stat: Stat::new(),
-                        blocks: Vec::with_capacity(
-                            (usize::try_from(metadata.len())? + bs - 1) / bs,
-                        ),
+                        blocks: Vec::with_capacity((usize::try_from(metadata.len())? + bs - 1) / bs),
                     },
                 };
 
@@ -219,12 +215,10 @@ impl Indexer {
                     match rxo[sn % n].recv() {
                         Ok((size, stat, chronology)) => {
                             index.source.stat.merge(&stat);
-                            index.source.blocks.push(SourceBlock::new(
-                                offset,
-                                size.try_into()?,
-                                stat,
-                                chronology,
-                            ));
+                            index
+                                .source
+                                .blocks
+                                .push(SourceBlock::new(offset, size.try_into()?, stat, chronology));
                             offset += u64::try_from(size)?;
                         }
                         Err(RecvError) => {
@@ -247,10 +241,9 @@ impl Indexer {
         let mut stat = Stat::new();
         let mut sorted = true;
         let mut prev_ts = None;
-        let mut lines =
-            Vec::<(Option<Timestamp>, u32, u32)>::with_capacity(segment.data().len() / 512);
+        let mut lines = Vec::<(Option<Timestamp>, u32, u32)>::with_capacity(segment.data().len() / 512);
         let mut offset = 0;
-        for (i, data) in segment.data().split(|c| *c == b'\n').enumerate() {
+        for (i, data) in rtrim(segment.data(), b'\n').split(|c| *c == b'\n').enumerate() {
             let data_len = data.len();
             let data = strip(data, b'\r');
             let mut ts = None;
@@ -319,11 +312,7 @@ impl Indexer {
                 }
                 bitmap.push(mask);
             }
-            Chronology {
-                bitmap,
-                offsets,
-                jumps,
-            }
+            Chronology { bitmap, offsets, jumps }
         };
         (stat, chronology)
     }
@@ -482,11 +471,7 @@ impl Index {
             }
             result
         };
-        Ok(Chronology {
-            bitmap,
-            offsets,
-            jumps,
-        })
+        Ok(Chronology { bitmap, offsets, jumps })
     }
 
     fn save_chronology(mut to: schema::chronology::Builder, from: &Chronology) -> Result<()> {
@@ -750,6 +735,14 @@ fn level_to_flag(level: Level) -> u64 {
         Level::Info => schema::FLAG_LEVEL_INFO,
         Level::Warning => schema::FLAG_LEVEL_WARNING,
         Level::Error => schema::FLAG_LEVEL_ERROR,
+    }
+}
+
+fn rtrim<'a>(s: &'a [u8], c: u8) -> &'a [u8] {
+    if s.len() > 0 && s[s.len() - 1] == c {
+        &s[..s.len() - 1]
+    } else {
+        s
     }
 }
 
