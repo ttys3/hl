@@ -208,6 +208,10 @@ impl Block<IndexedInput> {
     pub fn source_block(&self) -> &SourceBlock {
         &self.input.index.source().blocks[self.index]
     }
+
+    pub fn lines_valid(&self) -> u64 {
+        self.source_block().stat.lines_valid
+    }
 }
 
 // ---
