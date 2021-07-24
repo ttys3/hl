@@ -3,7 +3,7 @@ use std::cmp::{max, Reverse};
 use std::collections::VecDeque;
 use std::convert::{TryFrom, TryInto};
 use std::fs;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::iter::once;
 use std::ops::Range;
 use std::path::PathBuf;
@@ -151,6 +151,7 @@ impl App {
     }
 
     fn sort(&self, inputs: Vec<InputReference>, output: &mut (dyn Write + Send + Sync)) -> Result<()> {
+        let mut output = BufWriter::new(output);
         let param_hash = hex::encode(self.parameters_hash()?);
         let cache_dir = directories::BaseDirs::new()
             .map(|d| d.cache_dir().into())
@@ -254,6 +255,9 @@ impl App {
                         let mut buf = Vec::with_capacity(2 * usize::try_from(block.size())?);
                         let mut items = Vec::with_capacity(2 * usize::try_from(block.lines_valid())?);
                         for line in block.into_lines()? {
+                            if line.len() == 0 {
+                                continue;
+                            }
                             let record = parser.parse(json::from_slice(line.bytes())?);
                             if record.matches(&self.options.filter) {
                                 let offset = buf.len();
@@ -271,6 +275,7 @@ impl App {
                 })));
             }
             // spawn merger thread
+            /*
             let merger = scope.spawn(|_| -> Result<()> {
                 let mut input = StripedReceiver::new(rxw);
                 let (mut tsi, mut tso) = (None, None);
@@ -283,6 +288,7 @@ impl App {
                             let head = tail.next();
                             if let Some(head) = head {
                                 tsi = Some(head.0.clone());
+                                tso = tso.or(tsi);
                                 workspace.push((head, tail));
                             }
                         }
@@ -296,14 +302,25 @@ impl App {
                     let k = workspace.len() - 1;
                     let item = &mut workspace[k];
                     let ts = (item.0).0;
-                    if Some(ts) >= tsi {
+                    tso = Some(ts);
+                    if tso >= tsi {
                         continue;
                     }
                     output.write_all((item.0).1.bytes())?;
-                    tso = Some(ts);
                     match item.1.next() {
                         Some(head) => item.0 = head,
                         None => drop(workspace.swap_remove(k)),
+                    }
+                }
+
+                Ok(())
+            });
+            */
+            // spawn catter thread
+            let catter = scope.spawn(|_| -> Result<()> {
+                for block in StripedReceiver::new(rxw) {
+                    for (_, line) in block.into_lines() {
+                        output.write_all(line.bytes())?;
                     }
                 }
 
@@ -314,7 +331,7 @@ impl App {
             for worker in workers {
                 worker.join().unwrap()?;
             }
-            merger.join().unwrap()?;
+            catter.join().unwrap()?;
 
             Ok(())
         })
