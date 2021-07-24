@@ -39,6 +39,11 @@ impl<'a> Timestamp<'a> {
     pub fn as_rfc3339(&self) -> Option<rfc3339::Timestamp> {
         rfc3339::Timestamp::parse(self.0)
     }
+
+    pub fn unix_utc(&self) -> Option<(i64, u32)> {
+        self.parse()
+            .and_then(|ts| Some((ts.timestamp(), ts.timestamp_subsec_nanos())))
+    }
 }
 
 // ---

@@ -67,8 +67,7 @@ impl Input {
 
     pub fn open(path: &PathBuf) -> io::Result<Self> {
         let name = format!("file '{}'", Colour::Yellow.paint(path.to_string_lossy()));
-        let f = File::open(path)
-            .map_err(|e| io::Error::new(e.kind(), format!("failed to open {}: {}", name, e)))?;
+        let f = File::open(path).map_err(|e| io::Error::new(e.kind(), format!("failed to open {}: {}", name, e)))?;
         let stream: InputStream = match path.extension().map(|x| x.to_str()) {
             Some(Some("gz")) => Box::new(GzDecoder::new(BufReader::new(f))),
             _ => Box::new(f),
@@ -87,17 +86,12 @@ pub struct IndexedInput {
 
 impl IndexedInput {
     pub fn new(name: String, stream: InputSeekStream, index: Index) -> Self {
-        Self {
-            name,
-            stream,
-            index,
-        }
+        Self { name, stream, index }
     }
 
     pub fn open(path: &PathBuf, indexer: &Indexer) -> Result<Self> {
         let name = format!("file '{}'", Colour::Yellow.paint(path.to_string_lossy()));
-        let f = File::open(path)
-            .map_err(|e| io::Error::new(e.kind(), format!("failed to open {}: {}", name, e)))?;
+        let f = File::open(path).map_err(|e| io::Error::new(e.kind(), format!("failed to open {}: {}", name, e)))?;
         let stream: InputSeekStream = match path.extension().map(|x| x.to_str()) {
             Some(Some("gz")) => panic!("sorting messages from gz files is not yet implemented"),
             _ => Box::new(Mutex::new(f)),
@@ -137,9 +131,7 @@ impl<II: Iterator<Item = usize>> Iterator for Blocks<IndexedInput, II> {
     type Item = Block<IndexedInput>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.indexes
-            .next()
-            .map(|i| Block::new(self.input.clone(), i))
+        self.indexes.next().map(|i| Block::new(self.input.clone(), i))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -162,9 +154,7 @@ impl<II: Iterator<Item = usize>> Iterator for Blocks<IndexedInput, II> {
     }
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        self.indexes
-            .nth(n)
-            .map(|i| Block::new(self.input.clone(), i))
+        self.indexes.nth(n).map(|i| Block::new(self.input.clone(), i))
     }
 }
 
@@ -239,8 +229,7 @@ impl BlockLines<IndexedInput> {
             let mut stream = block.input.stream.lock().unwrap();
             stream.seek(SeekFrom::Start(source_block.offset))?;
             stream.read(&mut buf)?;
-            let total =
-                (source_block.stat.lines_valid + source_block.stat.lines_invalid).try_into()?;
+            let total = (source_block.stat.lines_valid + source_block.stat.lines_invalid).try_into()?;
             (buf, total)
         };
         Ok(Self {
@@ -279,10 +268,7 @@ impl Iterator for BlockLines<IndexedInput> {
             }
         }
         let s = &self.buf[self.byte..];
-        let l = s
-            .iter()
-            .position(|&x| x == b'\n')
-            .map_or(s.len(), |i| i + 1);
+        let l = s.iter().position(|&x| x == b'\n').map_or(s.len(), |i| i + 1);
         let offset = self.byte;
         self.byte += l;
         self.current += 1;
@@ -313,7 +299,7 @@ impl BlockLine {
     }
 
     pub fn bytes(&self) -> &[u8] {
-        &self.buf[self.range]
+        &self.buf[self.range.clone()]
     }
 
     pub fn offset(&self) -> usize {
@@ -356,9 +342,10 @@ where
             }
 
             let input = self.item.as_mut().unwrap();
-            let n = input.stream.read(buf).map_err(|e| {
-                io::Error::new(e.kind(), format!("failed to read {}: {}", input.name, e))
-            })?;
+            let n = input
+                .stream
+                .read(buf)
+                .map_err(|e| io::Error::new(e.kind(), format!("failed to read {}: {}", input.name, e)))?;
             if n != 0 {
                 return Ok(n);
             }
