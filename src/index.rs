@@ -37,7 +37,7 @@ use crate::error::{Error, Result};
 use crate::index_capnp as schema;
 use crate::input::Input;
 use crate::model::{Parser, ParserSettings, RawRecord};
-use crate::scanning::{BufFactory, Scanner, Segment, SegmentBuf, SegmentBufFactory};
+use crate::scanning::{Scanner, Segment, SegmentBuf, SegmentBufFactory};
 use crate::settings::PredefinedFields;
 use crate::types::Level;
 
@@ -155,7 +155,6 @@ impl Indexer {
     ) -> Result<Index> {
         let n = self.concurrency;
         let sfi = Arc::new(SegmentBufFactory::new(self.buffer_size.try_into()?));
-        let bfo = BufFactory::new(self.buffer_size.try_into()?);
         thread::scope(|scope| -> Result<Index> {
             // prepare receive/transmit channels for input data
             let (txi, rxi): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded(1)).unzip();
@@ -178,7 +177,7 @@ impl Indexer {
             }));
             // spawn processing threads
             for (rxi, txo) in izip!(rxi, txo) {
-                scope.spawn(closure!(ref bfo, ref sfi, |_| {
+                scope.spawn(closure!(ref sfi, |_| {
                     for segment in rxi.iter() {
                         let ((stat, chronology), segment) = match segment {
                             Segment::Complete(segment) => (self.process_segement(&segment), segment),
@@ -197,7 +196,7 @@ impl Indexer {
                 }));
             }
             // spawn writer thread
-            let writer = scope.spawn(closure!(ref bfo, |_| -> Result<Index> {
+            let writer = scope.spawn(move |_| -> Result<Index> {
                 let bs = usize::try_from(self.buffer_size)?;
                 let mut index = Index {
                     source: SourceFile {
@@ -229,7 +228,7 @@ impl Indexer {
                 }
                 index.save(output)?;
                 Ok(index)
-            }));
+            });
             // collect errors from reader and writer threads
             reader.join().unwrap()?;
             writer.join().unwrap()
