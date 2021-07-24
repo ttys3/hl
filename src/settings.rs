@@ -1,7 +1,6 @@
 // std imports
 use std::collections::{BTreeMap, HashMap};
 use std::include_str;
-use std::io::Write;
 
 // third-party imports
 use chrono_tz::Tz;
@@ -45,8 +44,7 @@ impl Settings {
 impl Default for Settings {
     fn default() -> Self {
         let mut s = Config::default();
-        s.merge(File::from_str(DEFAULT_SETTINGS, FileFormat::Yaml))
-            .unwrap();
+        s.merge(File::from_str(DEFAULT_SETTINGS, FileFormat::Yaml)).unwrap();
         s.try_into().unwrap()
     }
 }

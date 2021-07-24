@@ -1,10 +1,8 @@
 // std imports
-use std::cmp::{max, Reverse};
-use std::collections::VecDeque;
+use std::cmp::Reverse;
 use std::convert::{TryFrom, TryInto};
 use std::fs;
 use std::io::{BufWriter, Write};
-use std::iter::once;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -23,9 +21,8 @@ use crate::datefmt::{DateTimeFormat, DateTimeFormatter};
 use crate::error::*;
 use crate::formatting::RecordFormatter;
 use crate::index::{Indexer, Timestamp};
-use crate::input::{BlockLine, BlockLines, ConcatReader, IndexedInput, InputReference};
+use crate::input::{BlockLine, ConcatReader, InputReference};
 use crate::model::{Filter, Parser, ParserSettings, RawRecord};
-use crate::pool::SQPool;
 use crate::scanning::{BufFactory, Scanner, Segment, SegmentBufFactory};
 use crate::settings::Fields;
 use crate::theme::Theme;
@@ -47,6 +44,7 @@ pub struct Options {
     pub time_zone: FixedOffset,
     pub hide_empty_fields: bool,
     pub sort: bool,
+    pub dump_index: bool,
 }
 
 pub struct FieldOptions {
@@ -172,23 +170,26 @@ impl App {
             .map(|x| x.index(&indexer))
             .collect::<Result<Vec<_>>>()?;
 
-        // for input in inputs {
-        //     // writeln!(output, "{:#?}", input.index)?;
-        //     for block in input.into_blocks().sorted() {
-        //         writeln!(output, "block at {} with size {}", block.offset(), block.size())?;
-        //         writeln!(output, "{:#?}", block.source_block())?;
-        //         let block_offset = block.offset();
-        //         for line in block.into_lines()? {
-        //             writeln!(
-        //                 output,
-        //                 "{} bytes at {} (absolute {})",
-        //                 line.len(),
-        //                 line.offset(),
-        //                 block_offset + line.offset() as u64
-        //             )?;
-        //         }
-        //     }
-        // }
+        if self.options.dump_index {
+            for input in inputs {
+                for block in input.into_blocks().sorted() {
+                    writeln!(output, "block at {} with size {}", block.offset(), block.size())?;
+                    writeln!(output, "{:#?}", block.source_block())?;
+                    let block_offset = block.offset();
+                    for line in block.into_lines()? {
+                        writeln!(
+                            output,
+                            "{} bytes at {} (absolute {})",
+                            line.len(),
+                            line.offset(),
+                            block_offset + line.offset() as u64
+                        )?;
+                    }
+                }
+            }
+            return Ok(());
+        }
+
         let n = self.options.concurrency;
         let parser = self.parser();
         thread::scope(|scope| -> Result<()> {
@@ -224,20 +225,8 @@ impl App {
 
                 blocks.sort_by(|a, b| (a.1, a.2, a.3, a.4).partial_cmp(&(b.1, b.2, b.3, b.4)).unwrap());
 
-                // for (block, ts_min, ts_max, i) in &blocks {
-                //     println!(
-                //         "|{:10}.{:09}|{:10}.{:09} {:7} @[{}]{:9}",
-                //         ts_min.sec,
-                //         ts_min.nsec,
-                //         ts_max.sec,
-                //         ts_max.nsec,
-                //         block.size(),
-                //         i,
-                //         block.offset(),
-                //     );
-                // }
                 let mut output = StripedSender::new(txp);
-                for (j, (block, _, _, i, offset)) in blocks.into_iter().enumerate() {
+                for (j, (block, _, _, i, _)) in blocks.into_iter().enumerate() {
                     if output.send((block, i, j)).is_none() {
                         break;
                     }
@@ -316,16 +305,6 @@ impl App {
 
                 Ok(())
             });
-            // // spawn catter thread
-            // let catter = scope.spawn(|_| -> Result<()> {
-            //     for block in StripedReceiver::new(rxw) {
-            //         for (_, line) in block.into_lines() {
-            //             output.write_all(line.bytes())?;
-            //         }
-            //     }
-
-            //     Ok(())
-            // });
 
             pusher.join().unwrap()?;
             for worker in workers {
@@ -421,13 +400,6 @@ struct OutputBlock {
 }
 
 impl OutputBlock {
-    pub fn lines<'a>(&'a self) -> impl Iterator<Item = (Timestamp, BlockLine)> + 'a {
-        let buf = self.buf.clone();
-        self.items
-            .iter()
-            .map(move |(ts, range)| (ts.clone(), BlockLine::new(buf.clone(), range.clone())))
-    }
-
     pub fn into_lines(self) -> impl Iterator<Item = (Timestamp, BlockLine)> {
         let buf = self.buf;
         self.items
@@ -487,6 +459,3 @@ fn rtrim<'a>(s: &'a [u8], c: u8) -> &'a [u8] {
         s
     }
 }
-
-// [1..4] [2..5] [4..10] [12..14] [14..18]
-// [[1..4], [2..5]], [[2..5], [4..10]]
