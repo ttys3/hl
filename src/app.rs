@@ -195,7 +195,9 @@ impl App {
             // prepare transmit/receive channels for data produced by pusher thread
             let (txp, rxp): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded(1)).unzip();
             // prepare transmit/receive channels for data produced by worker threads
-            let (txw, rxw): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded::<OutputBlock>(1)).unzip();
+            let (txw, rxw): (Vec<_>, Vec<_>) = (0..n)
+                .map(|_| channel::bounded::<(OutputBlock, usize, usize)>(1))
+                .unzip();
             // spawn pusher thread
             let pusher = scope.spawn(closure!(|_| -> Result<()> {
                 let mut blocks: Vec<_> = inputs
@@ -213,11 +215,14 @@ impl App {
                                 return None;
                             }
                         }
-                        src.stat.ts_min_max.map(|(ts_min, ts_max)| (block, ts_min, ts_max, i))
+                        let offset = block.offset();
+                        src.stat
+                            .ts_min_max
+                            .map(|(ts_min, ts_max)| (block, ts_min, ts_max, i, offset))
                     })
                     .collect();
 
-                blocks.sort_by(|a, b| (a.1, a.2, a.3).partial_cmp(&(b.1, b.2, b.3)).unwrap());
+                blocks.sort_by(|a, b| (a.1, a.2, a.3, a.4).partial_cmp(&(b.1, b.2, b.3, b.4)).unwrap());
 
                 // for (block, ts_min, ts_max, i) in &blocks {
                 //     println!(
@@ -232,8 +237,8 @@ impl App {
                 //     );
                 // }
                 let mut output = StripedSender::new(txp);
-                for (block, ts_min, ts_max, i) in blocks {
-                    if output.send((block, i)).is_none() {
+                for (j, (block, _, _, i, offset)) in blocks.into_iter().enumerate() {
+                    if output.send((block, i, j)).is_none() {
                         break;
                     }
                 }
@@ -244,7 +249,7 @@ impl App {
             for (rxp, txw) in izip!(rxp, txw) {
                 workers.push(scope.spawn(closure!(ref parser, |_| -> Result<()> {
                     let mut formatter = self.formatter();
-                    for (block, i) in rxp.iter() {
+                    for (block, i, j) in rxp.iter() {
                         let mut buf = Vec::with_capacity(2 * usize::try_from(block.size())?);
                         let mut items = Vec::with_capacity(2 * usize::try_from(block.lines_valid())?);
                         for line in block.into_lines()? {
@@ -260,7 +265,7 @@ impl App {
                         }
 
                         let buf = Arc::new(buf);
-                        if txw.send(OutputBlock { buf, items }).is_err() {
+                        if txw.send((OutputBlock { buf, items }, i, j)).is_err() {
                             break;
                         }
                     }
@@ -276,13 +281,13 @@ impl App {
 
                 loop {
                     while tso >= tsi {
-                        if let Some(block) = input.next() {
+                        if let Some((block, i, j)) = input.next() {
                             let mut tail = block.into_lines();
                             let head = tail.next();
                             if let Some(head) = head {
                                 tsi = Some(head.0.clone());
                                 tso = tso.or(tsi);
-                                workspace.push((head, tail));
+                                workspace.push((head, tail, i, j));
                             }
                         } else {
                             done = true;
@@ -294,7 +299,7 @@ impl App {
                         break;
                     }
 
-                    workspace.sort_by_key(|v| Reverse((v.0).0));
+                    workspace.sort_by_key(|v| Reverse(((v.0).0, v.2, v.3, (v.0).1.offset())));
                     let k = workspace.len() - 1;
                     let item = &mut workspace[k];
                     let ts = (item.0).0;
