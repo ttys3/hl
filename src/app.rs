@@ -275,11 +275,11 @@ impl App {
                 })));
             }
             // spawn merger thread
-            /*
             let merger = scope.spawn(|_| -> Result<()> {
                 let mut input = StripedReceiver::new(rxw);
                 let (mut tsi, mut tso) = (None, None);
                 let mut workspace = Vec::new();
+                let mut done = false;
 
                 loop {
                     while tso >= tsi {
@@ -291,6 +291,9 @@ impl App {
                                 tso = tso.or(tsi);
                                 workspace.push((head, tail));
                             }
+                        } else {
+                            done = true;
+                            break;
                         }
                     }
 
@@ -303,7 +306,7 @@ impl App {
                     let item = &mut workspace[k];
                     let ts = (item.0).0;
                     tso = Some(ts);
-                    if tso >= tsi {
+                    if tso >= tsi && !done {
                         continue;
                     }
                     output.write_all((item.0).1.bytes())?;
@@ -315,23 +318,22 @@ impl App {
 
                 Ok(())
             });
-            */
-            // spawn catter thread
-            let catter = scope.spawn(|_| -> Result<()> {
-                for block in StripedReceiver::new(rxw) {
-                    for (_, line) in block.into_lines() {
-                        output.write_all(line.bytes())?;
-                    }
-                }
+            // // spawn catter thread
+            // let catter = scope.spawn(|_| -> Result<()> {
+            //     for block in StripedReceiver::new(rxw) {
+            //         for (_, line) in block.into_lines() {
+            //             output.write_all(line.bytes())?;
+            //         }
+            //     }
 
-                Ok(())
-            });
+            //     Ok(())
+            // });
 
             pusher.join().unwrap()?;
             for worker in workers {
                 worker.join().unwrap()?;
             }
-            catter.join().unwrap()?;
+            merger.join().unwrap()?;
 
             Ok(())
         })

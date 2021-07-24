@@ -39,12 +39,7 @@ const APP_NAME: &str = "hl";
 #[structopt(setting(ColorAuto), setting(ColoredHelp))]
 struct Opt {
     /// Color output options, one of { auto, always, never }.
-    #[structopt(
-        long,
-        default_value = "auto",
-        env = "HL_COLOR",
-        overrides_with = "color"
-    )]
+    #[structopt(long, default_value = "auto", env = "HL_COLOR", overrides_with = "color")]
     color: ColorOption,
     //
     /// Handful alias for --color=always, overrides --color option.
@@ -52,12 +47,7 @@ struct Opt {
     color_always: bool,
     //
     /// Output paging options, one of { auto, always, never }.
-    #[structopt(
-        long,
-        default_value = "auto",
-        env = "HL_PAGING",
-        overrides_with = "paging"
-    )]
+    #[structopt(long, default_value = "auto", env = "HL_PAGING", overrides_with = "paging")]
     paging: PagingOption,
     //
     /// Handful alias for --paging=never, overrides --paging option.
@@ -96,12 +86,7 @@ struct Opt {
     max_message_size: usize,
     //
     /// Number of processing threads.
-    #[structopt(
-        long,
-        short = "C",
-        env = "HL_CONCURRENCY",
-        overrides_with = "concurrency"
-    )]
+    #[structopt(long, short = "C", env = "HL_CONCURRENCY", overrides_with = "concurrency")]
     concurrency: Option<usize>,
     //
     /// Filtering by field values in one of forms [<key>=<value>, <key>~=<value>, <key>~~=<value>, <key>!=<value>, <key>!~=<value>, <key>!~~=<value>] where ~ denotes substring match and ~~ denotes regular expression match.
@@ -169,6 +154,10 @@ struct Opt {
     /// Sort messages chronologically.
     #[structopt(long, short = "s")]
     sort: bool,
+
+    /// Output file.
+    #[structopt(long, short = "o")]
+    output: Option<String>,
 }
 
 arg_enum! {
@@ -367,14 +356,19 @@ fn run() -> Result<()> {
         PagingOption::Never => false,
     };
     let paging = if opt.paging_never { false } else { paging };
-    let mut output: OutputStream = if paging {
-        if let Ok(pager) = Pager::new() {
-            Box::new(pager)
-        } else {
-            Box::new(std::io::stdout())
+    let mut output: OutputStream = match opt.output {
+        Some(output) => Box::new(std::fs::File::create(PathBuf::from(&output))?),
+        None => {
+            if paging {
+                if let Ok(pager) = Pager::new() {
+                    Box::new(pager)
+                } else {
+                    Box::new(std::io::stdout())
+                }
+            } else {
+                Box::new(std::io::stdout())
+            }
         }
-    } else {
-        Box::new(std::io::stdout())
     };
 
     // Run the app.
@@ -385,11 +379,7 @@ fn run() -> Result<()> {
     };
 
     // Run the app with signal handling.
-    SignalHandler::run(
-        opt.interrupt_ignore_count,
-        std::time::Duration::from_secs(1),
-        run,
-    )
+    SignalHandler::run(opt.interrupt_ignore_count, std::time::Duration::from_secs(1), run)
 }
 
 fn main() {
