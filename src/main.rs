@@ -184,9 +184,12 @@ static CONFIG: Lazy<Settings> = Lazy::new(|| load_config());
 
 // ---
 
+fn app_dirs() -> AppDirs {
+    AppDirs::new(Some(APP_NAME), true).unwrap()
+}
+
 fn load_config() -> Settings {
-    let app_dirs = AppDirs::new(Some(APP_NAME), true).unwrap();
-    Settings::load(&app_dirs).unwrap()
+    Settings::load(&app_dirs()).unwrap()
 }
 
 fn parse_size(s: &str) -> Result<usize> {
@@ -213,7 +216,7 @@ fn parse_non_zero_size(s: &str) -> Result<usize> {
 // ---
 
 fn run() -> Result<()> {
-    let app_dirs = AppDirs::new(Some("hl"), true).unwrap();
+    let app_dirs = app_dirs();
     let settings = Settings::load(&app_dirs)?;
     let opt = Opt::from_args();
     let stdout_is_atty = || atty::is(atty::Stream::Stdout);
@@ -331,6 +334,7 @@ fn run() -> Result<()> {
         hide_empty_fields,
         sort: opt.sort,
         dump_index: opt.dump_index,
+        app_dirs: Some(app_dirs),
     });
 
     // Configure input.
