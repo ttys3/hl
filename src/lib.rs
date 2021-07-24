@@ -21,6 +21,7 @@ mod filtering;
 mod formatting;
 mod model;
 mod pool;
+mod replay;
 mod scanning;
 
 // conditional public modules
