@@ -172,29 +172,23 @@ impl App {
             .map(|x| x.index(&indexer))
             .collect::<Result<Vec<_>>>()?;
 
-        /*
-        for input in inputs {
-            // writeln!(output, "{:#?}", input.index)?;
-            for block in input.into_blocks().sorted() {
-                // writeln!(
-                //     output,
-                //     "block at {} with size {}",
-                //     block.offset(),
-                //     block.size()
-                // )?;
-                // writeln!(output, "{:#?}", block.source_block())?;
-                for line in block.into_lines()? {
-                    // writeln!(output, "{} bytes at {}", line.len(), line.offset())?;
-                    output.write_all(line.bytes())?;
-                }
-            }
-        }
-        */
-
-        // if blocks.len() == 0 {
-        //     return Ok(());
+        // for input in inputs {
+        //     // writeln!(output, "{:#?}", input.index)?;
+        //     for block in input.into_blocks().sorted() {
+        //         writeln!(output, "block at {} with size {}", block.offset(), block.size())?;
+        //         writeln!(output, "{:#?}", block.source_block())?;
+        //         let block_offset = block.offset();
+        //         for line in block.into_lines()? {
+        //             writeln!(
+        //                 output,
+        //                 "{} bytes at {} (absolute {})",
+        //                 line.len(),
+        //                 line.offset(),
+        //                 block_offset + line.offset() as u64
+        //             )?;
+        //         }
+        //     }
         // }
-
         let n = self.options.concurrency;
         let parser = self.parser();
         thread::scope(|scope| -> Result<()> {
@@ -226,17 +220,16 @@ impl App {
                 blocks.sort_by(|a, b| (a.1, a.2, a.3).partial_cmp(&(b.1, b.2, b.3)).unwrap());
 
                 // for (block, ts_min, ts_max, i) in &blocks {
-                //     writeln!(
-                //         output,
+                //     println!(
                 //         "|{:10}.{:09}|{:10}.{:09} {:7} @[{}]{:9}",
-                //         ts_min.0,
-                //         ts_min.1,
-                //         ts_max.0,
-                //         ts_max.1,
+                //         ts_min.sec,
+                //         ts_min.nsec,
+                //         ts_max.sec,
+                //         ts_max.nsec,
                 //         block.size(),
                 //         i,
                 //         block.offset(),
-                //     )?;
+                //     );
                 // }
                 let mut output = StripedSender::new(txp);
                 for (block, ts_min, ts_max, i) in blocks {
@@ -338,173 +331,6 @@ impl App {
             Ok(())
         })
         .unwrap()?;
-        /*
-                let batch = |ts_min| {
-                    let mut ts_next = ts_min;
-                    let mut next = None;
-                    let mut first = true;
-                    |it| if first {
-                            first = false;
-                            (ts_next, ||{
-                                let result = it.next();
-                                next = it.next();
-                                result
-                            })
-                        } else {
-                            ()
-                        }
-                        None =>                     match it.next() {
-                            None => None,
-                            Some(line) => {
-                                next = Some(line),
-                            }
-                        }
-
-
-                        Some()
-                    }
-                };
-
-                let (block, ts_min, ts_max, i) = blocks[0];
-                let mut ts_next = ts_min;
-                let lazy_lines = block
-                    .into_lines()
-                    .into_iter()
-                    .batching(batch);
-        */
-
-        /*
-        let mut workspace = VecDeque::new();
-        let mut last_ts = None;
-        let mut blocks = blocks.into_iter();
-        let mut next = blocks.next();
-        loop {
-            if let Some(last_ts) = last_ts {
-                if workspace.back().map(|x|x.2 >= last_ts) {
-                    if let Some((block, ts_min, ts_max, i)) = blocks.next() {
-                        workspace.push_back((block.into_lines(), ts_min, ts_max, i));
-                    }
-                }
-            }
-            if workspace.len() != 0 {
-                if workspace.front().
-                }
-            }
-            if workspace.len() == 0 || workspace.back().
-        }
-        let input = &inputs[i];
-        let blocks = input.index.source().blocks.clone();
-        blocks.sort_by(|a, b|a.stat.ts_min_max.partial_cmp(&b.stat.ts_min_max).unwrap());
-        let scanner = Scanner::new(sfi, "\n".to_string());
-        for item in scanner.items(&mut input.stream) {
-            if let Err(_) = stx[i].send(item?) {
-                break;
-            }
-        }
-        */
-
-        /*
-        let n = self.options.concurrency;
-        let sfi = Arc::new(SegmentBufFactory::new(self.options.buffer_size.try_into()?));
-        let bfo = BufFactory::new(self.options.buffer_size.try_into()?);
-        thread::scope(|scope| -> Result<()> {
-            // prepare receive/transmit channels for sorter stage
-            let (stx, srx): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded(1)).unzip();
-            // prepare receive/transmit channels for parser stage
-            let (ptx, prx): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded(1)).unzip();
-            // prepare receive/transmit channels for formatter stage
-            let (ftx, frx): (Vec<_>, Vec<_>) = (0..n)
-                .into_iter()
-                .map(|_| channel::bounded::<Vec<u8>>(1))
-                .unzip();
-            // spawn processing threads
-            for (rxi, txo) in izip!(rxi, txo) {
-                scope.spawn(closure!(ref bfo, ref sfi, |_| {
-                    let mut formatter = RecordFormatter::new(
-                        self.options.theme.clone(),
-                        DateTimeFormatter::new(
-                            self.options.time_format.clone(),
-                            self.options.time_zone,
-                        ),
-                        self.options.hide_empty_fields,
-                        self.options.fields.clone(),
-                    )
-                    .with_field_unescaping(!self.options.raw_fields);
-                    for segment in rxi.iter() {
-                        match segment {
-                            Segment::Complete(segment) => {
-                                let mut buf = bfo.new_buf();
-                                self.process_segement(&segment, &mut formatter, &mut buf);
-                                sfi.recycle(segment);
-                                if let Err(_) = txo.send(buf) {
-                                    break;
-                                };
-                            }
-                            Segment::Incomplete(segment) => {
-                                if let Err(_) = txo.send(segment.to_vec()) {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }));
-            }
-            // spawn writer thread
-            let writer = scope.spawn(closure!(ref bfo, |_| -> Result<()> {
-                let mut sn = 0;
-                loop {
-                    match rxo[sn % n].recv() {
-                        Ok(buf) => {
-                            output.write_all(&buf[..])?;
-                            bfo.recycle(buf);
-                        }
-                        Err(RecvError) => {
-                            break;
-                        }
-                    }
-                    sn += 1;
-                }
-                Ok(())
-            }));
-
-            // spawn reader threads
-            let reader = scope.spawn(closure!(clone sfi, |_| -> Result<()> {
-                let mut workspace = VecDeque::new();
-                let mut last_ts = None;
-                let mut blocks = blocks.iter();
-                loop {
-                    if let Some(last_ts) = last_ts {
-                        if workspace.front().map(|x|x.2 < last_ts).unwrap_or_default() {
-                            workspace.pop_front();
-                        }
-                        if workspace.back().map(|x|x.2 >= last_ts)
-                    }
-                    if workspace.len() != 0 {
-                            if workspace.front().
-                        }
-                    }
-                    if workspace.len() == 0 || workspace.back().
-                }
-                let input = &inputs[i];
-                let blocks = input.index.source().blocks.clone();
-                blocks.sort_by(|a, b|a.stat.ts_min_max.partial_cmp(&b.stat.ts_min_max).unwrap());
-                let scanner = Scanner::new(sfi, "\n".to_string());
-                for item in scanner.items(&mut input.stream) {
-                    if let Err(_) = stx[i].send(item?) {
-                        break;
-                    }
-                }
-                Ok(())
-            }));
-            // collect errors from reader and writer threads
-            for reader in readers {
-                reader.join().unwrap()?;
-            }
-            writer.join().unwrap()?;
-            Ok(())
-        })
-        .unwrap()?;
-        */
 
         Ok(())
     }
