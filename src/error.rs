@@ -79,6 +79,8 @@ pub enum Error {
     },
     #[error("invalid index header")]
     InvalidIndexHeader,
+    #[error("failed to parse json: {0}")]
+    JsonParseError(#[from] serde_json::Error),
 }
 
 /// Result is an alias for standard result with bound Error type.

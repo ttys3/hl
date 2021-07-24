@@ -89,11 +89,7 @@ impl App {
         let n = self.options.concurrency;
         let sfi = Arc::new(SegmentBufFactory::new(self.options.buffer_size.try_into()?));
         let bfo = BufFactory::new(self.options.buffer_size.try_into()?);
-        let parser = Parser::new(ParserSettings::new(
-            &self.options.fields.settings.predefined,
-            &self.options.fields.settings.ignore,
-            self.options.filter.since.is_some() || self.options.filter.until.is_some(),
-        ));
+        let parser = self.parser();
         thread::scope(|scope| -> Result<()> {
             // prepare receive/transmit channels for input data
             let (txi, rxi): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded(1)).unzip();
@@ -117,16 +113,7 @@ impl App {
             // spawn processing threads
             for (rxi, txo) in izip!(rxi, txo) {
                 scope.spawn(closure!(ref bfo, ref parser, ref sfi, |_| {
-                    let mut formatter = RecordFormatter::new(
-                        self.options.theme.clone(),
-                        DateTimeFormatter::new(
-                            self.options.time_format.clone(),
-                            self.options.time_zone,
-                        ),
-                        self.options.hide_empty_fields,
-                        self.options.fields.filter.clone(),
-                    )
-                    .with_field_unescaping(!self.options.raw_fields);
+                    let mut formatter = self.formatter();
                     let mut processor = SegmentProcesor::new(&parser, &mut formatter, &self.options.filter);
                     for segment in rxi.iter() {
                         match segment {
@@ -223,11 +210,7 @@ impl App {
         // }
 
         let n = self.options.concurrency;
-        let parser = Parser::new(ParserSettings::new(
-            &self.options.fields.settings.predefined,
-            &self.options.fields.settings.ignore,
-            self.options.filter.since.is_some() || self.options.filter.until.is_some(),
-        ));
+        let parser = self.parser();
         thread::scope(|scope| -> Result<()> {
             // prepare transmit/receive channels for data produced by pusher thread
             let (txp, rxp): (Vec<_>, Vec<_>) = (0..n).map(|_| channel::bounded(1)).unzip();
@@ -274,7 +257,7 @@ impl App {
                 // }
                 let mut sn: usize = 0;
                 for (block, ts_min, ts_max, i) in blocks {
-                    if let Err(_) = txp[sn % n].send((block, ts_min, ts_max, i)) {
+                    if let Err(_) = txp[sn % n].send((block, i)) {
                         break;
                     }
                     sn += 1;
@@ -284,9 +267,20 @@ impl App {
             // spawn worker threads
             let workers = Vec::with_capacity(n);
             for (rxp, txw) in izip!(rxp, txw) {
-                scanners.push(scope.spawn(move |_| -> Result<()> {
-                    for (block, ts_min, ts_max, i) in rxp.iter() {
-                        if txs.send((ts_min, ts_max, i, block.into_lines()?)).is_err() {
+                workers.push(scope.spawn(move |_| -> Result<()> {
+                    let mut formatter = self.formatter();
+                    for (block, i) in rxp.iter() {
+                        let mut buf = Vec::with_capacity(block.size().try_into()? * 2);
+                        let mut ranges = Vec::with_capacity(block.lines_valid().try_into()? * 2);
+                        for line in block.into_lines()? {
+                            let record = parser.parse(json::from_slice(line.bytes())?);
+                            if record.matches(&self.options.filter) {
+                                formatter.format_record(&mut buf, &record)
+                            }
+                        }
+
+                        let buf = Arc::new(buf);
+                        if txw.send(OutputBlock { buf, ranges }).is_err() {
                             break;
                         }
                     }
@@ -514,6 +508,24 @@ impl App {
             ),
         )?;
         Ok(hasher.finalize().into())
+    }
+
+    fn parser(&self) -> Parser {
+        Parser::new(ParserSettings::new(
+            &self.options.fields.settings.predefined,
+            &self.options.fields.settings.ignore,
+            self.options.filter.since.is_some() || self.options.filter.until.is_some(),
+        ))
+    }
+
+    fn formatter(&self) -> RecordFormatter {
+        RecordFormatter::new(
+            self.options.theme.clone(),
+            DateTimeFormatter::new(self.options.time_format.clone(), self.options.time_zone),
+            self.options.hide_empty_fields,
+            self.options.fields.filter.clone(),
+        )
+        .with_field_unescaping(!self.options.raw_fields)
     }
 }
 
