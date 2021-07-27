@@ -115,6 +115,21 @@ impl Indexer {
         self.build_index(&source_path, &index_path)
     }
 
+    /// Builds index for the given stream.
+    ///
+    /// Builds the index and returns it.
+    pub fn index_from_stream(&self, input: &mut Reader) -> Result<Index> {
+        self.process_file(
+            &PathBuf::from("<none>"),
+            Metadata {
+                len: 0,
+                modified: (0, 0),
+            },
+            input,
+            &mut std::io::sink(),
+        )
+    }
+
     fn build_index(&self, source_path: &PathBuf, index_path: &PathBuf) -> Result<Index> {
         let mut input = match Input::open(&source_path) {
             Ok(input) => input,
@@ -143,13 +158,13 @@ impl Indexer {
                 });
             }
         };
-        self.process_file(&source_path, &metadata, &mut input.stream, &mut output)
+        self.process_file(&source_path, (&metadata).try_into()?, &mut input.stream, &mut output)
     }
 
     fn process_file(
         &self,
         path: &PathBuf,
-        metadata: &std::fs::Metadata,
+        metadata: Metadata,
         input: &mut Reader,
         output: &mut Writer,
     ) -> Result<Index> {
@@ -200,11 +215,11 @@ impl Indexer {
                 let bs = usize::try_from(self.buffer_size)?;
                 let mut index = Index {
                     source: SourceFile {
-                        size: metadata.len(),
+                        size: metadata.len,
                         path: path.to_string_lossy().into(),
-                        modified: ts(metadata.modified()?),
+                        modified: metadata.modified,
                         stat: Stat::new(),
-                        blocks: Vec::with_capacity((usize::try_from(metadata.len())? + bs - 1) / bs),
+                        blocks: Vec::with_capacity((usize::try_from(metadata.len)? + bs - 1) / bs),
                     },
                 };
 
@@ -677,6 +692,24 @@ impl Header {
 
     fn save(&self, writer: &mut Writer) -> Result<()> {
         Ok(bincode::serialize_into(writer, &self)?)
+    }
+}
+
+// ---
+
+struct Metadata {
+    len: u64,
+    modified: (i64, u32),
+}
+
+impl TryFrom<&std::fs::Metadata> for Metadata {
+    type Error = std::io::Error;
+
+    fn try_from(value: &std::fs::Metadata) -> std::io::Result<Self> {
+        Ok(Self {
+            len: value.len(),
+            modified: ts(value.modified()?),
+        })
     }
 }
 
