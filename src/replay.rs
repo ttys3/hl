@@ -63,13 +63,16 @@ impl<I: Read> ReplayingReader<I> {
     }
 
     fn reload(&mut self, index: usize) -> Result<&Buf> {
-        if let Some(buf) = self.cache.get(&index) {
+        let ss = usize::from(self.segment_size);
+        let data = &mut self.data;
+        let put = |index: &usize, _| -> Result<Buf> {
+            let mut buf = vec![0; ss];
+            data[*index].decode(&mut buf)?;
             Ok(buf)
-        } else {
-            let mut buf = self.new_buf();
-            self.data[index].decode(&mut buf)?;
-            Ok(self.cache(index, buf))
-        }
+        };
+        let modify = |_: &usize, _: &mut Buf, _| Ok(());
+        let result = self.cache.try_put_or_modify(index, put, modify, ())?;
+        Ok(result)
     }
 
     fn cache(&mut self, index: usize, buf: Buf) -> &Buf {
