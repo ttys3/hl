@@ -36,18 +36,18 @@ impl<I: Read> ReplayingReader<I> {
         Self::builder(inner).build()
     }
 
-    fn segment(&mut self, index: usize) -> Result<Segment<&[u8]>> {
+    fn segment(&mut self, index: usize) -> Result<&[u8]> {
         if index >= self.data.len() {
             panic!("logic error")
         }
         if index == self.data.len() {
             if let Some(buf) = self.fetch()? {
-                Ok(Segment::Complete(self.cache(index, buf)))
+                Ok(self.cache(index, buf))
             } else {
-                Ok(Segment::Incomplete(self.scratch.bytes()))
+                Ok(self.scratch.bytes())
             }
         } else {
-            Ok(Segment::Complete(self.reload(index)?))
+            Ok(self.reload(index)?)
         }
     }
 
@@ -71,8 +71,7 @@ impl<I: Read> ReplayingReader<I> {
             Ok(buf)
         };
         let modify = |_: &usize, _: &mut Buf, _| Ok(());
-        let result = self.cache.try_put_or_modify(index, put, modify, ())?;
-        Ok(result)
+        Ok(self.cache.try_put_or_modify(index, put, modify, ())?)
     }
 
     fn cache(&mut self, index: usize, buf: Buf) -> &Buf {
