@@ -15,12 +15,13 @@ use flate2::bufread::GzDecoder;
 use crate::error::Result;
 use crate::index::{Index, Indexer, SourceBlock};
 use crate::pool::SQPool;
+use crate::replay::ReplayingReader;
 
 // ---
 
 pub type InputStream = Box<dyn Read + Send + Sync>;
 
-pub type InputSeekStream = Box<Mutex<dyn ReadSeek + Send + Sync>>;
+pub type InputSeekStream = Box<Mutex<dyn ReadSeek>>;
 
 pub type BufPool = SQPool<Vec<u8>>;
 
@@ -47,7 +48,13 @@ impl InputReference {
 
     pub fn index(&self, indexer: &Indexer) -> Result<IndexedInput> {
         match self {
-            InputReference::Stdin => panic!("indexing stdin is not implemented yet"),
+            InputReference::Stdin => {
+                let mut stream = Box::new(ReplayingReader::new(Box::new(stdin())));
+                let index = indexer.index_from_stream(&mut stream)?;
+                let mut stream = Box::new(Mutex::new());
+                let stream = stream.lock().unwrap();
+                Ok(IndexedInput::new("<stdin>".into(), stream, index))
+            }
             InputReference::File(filename) => IndexedInput::open(&filename, indexer),
         }
     }
