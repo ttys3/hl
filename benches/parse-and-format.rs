@@ -1,5 +1,5 @@
 // std imports
-use std::sync::Arc;
+use std::{iter::empty, sync::Arc};
 
 // third-party imports
 use byte_strings::concat_bytes;
@@ -20,7 +20,11 @@ fn benchmark(c: &mut Criterion) {
         for theme in ["classic", "one-dark-green-truecolor", "dmt"] {
             c.bench_function(format!("{}/{}", name, theme), |b| {
                 let settings = Settings::default();
-                let parser = Parser::new(ParserSettings::new(&settings.fields, false));
+                let parser = Parser::new(ParserSettings::new(
+                    &settings.fields.predefined,
+                    empty(),
+                    false,
+                ));
                 let mut formatter = RecordFormatter::new(
                     Arc::new(Theme::embedded(theme).unwrap()),
                     DateTimeFormatter::new(

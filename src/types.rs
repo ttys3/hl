@@ -4,14 +4,16 @@ use std::str::FromStr;
 
 // third-party imports
 use enum_map::Enum;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 // local imports
 use crate::error::{Error, Result};
 
 // ---
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Enum)]
+#[derive(
+    Clone, Copy, Debug, Deserialize, Serialize, Eq, Hash, Ord, PartialEq, PartialOrd, Enum,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Level {
     Error,
