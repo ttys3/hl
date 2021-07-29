@@ -3,6 +3,8 @@ pub mod app;
 pub mod datefmt;
 pub mod error;
 pub mod fmtx;
+pub mod index;
+pub mod index_capnp;
 pub mod input;
 pub mod output;
 pub mod settings;

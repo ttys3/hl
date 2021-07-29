@@ -5,7 +5,7 @@
 
 pub mod root {
   #[derive(Copy, Clone)]
-  pub struct Owned;
+  pub struct Owned(());
   impl <'a> ::capnp::traits::Owned<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
   impl <'a> ::capnp::traits::OwnedStruct<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
   impl ::capnp::traits::Pipelined for Owned { type Pipeline = Pipeline; }
@@ -42,7 +42,7 @@ pub mod root {
   }
 
   impl <'a,> Reader<'a,>  {
-    pub fn reborrow(&self) -> Reader<> {
+    pub fn reborrow(&self) -> Reader<'_,> {
       Reader { .. *self }
     }
 
@@ -88,7 +88,7 @@ pub mod root {
     }
   }
 
-  impl <'a,> ::capnp::traits::SetPointerBuilder<Builder<'a,>> for Reader<'a,>  {
+  impl <'a,> ::capnp::traits::SetPointerBuilder for Reader<'a,>  {
     fn set_pointer_builder<'b>(pointer: ::capnp::private::layout::PointerBuilder<'b>, value: Reader<'a,>, canonicalize: bool) -> ::capnp::Result<()> { pointer.set_struct(&value.reader, canonicalize) }
   }
 
@@ -96,10 +96,10 @@ pub mod root {
     pub fn into_reader(self) -> Reader<'a,> {
       ::capnp::traits::FromStructReader::new(self.builder.into_reader())
     }
-    pub fn reborrow(&mut self) -> Builder<> {
+    pub fn reborrow(&mut self) -> Builder<'_,> {
       Builder { .. *self }
     }
-    pub fn reborrow_as_reader(&self) -> Reader<> {
+    pub fn reborrow_as_reader(&self) -> Reader<'_,> {
       ::capnp::traits::FromStructReader::new(self.builder.into_reader())
     }
 
@@ -111,7 +111,7 @@ pub mod root {
       ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(0), ::core::option::Option::None)
     }
     #[inline]
-    pub fn set_source<'b>(&mut self, value: crate::index_capnp::source_file::Reader<'b>) -> ::capnp::Result<()> {
+    pub fn set_source(&mut self, value: crate::index_capnp::source_file::Reader<'_>) -> ::capnp::Result<()> {
       ::capnp::traits::SetPointerBuilder::set_pointer_builder(self.builder.get_pointer_field(0), value, false)
     }
     #[inline]
@@ -143,7 +143,7 @@ pub mod root {
 
 pub mod source_file {
   #[derive(Copy, Clone)]
-  pub struct Owned;
+  pub struct Owned(());
   impl <'a> ::capnp::traits::Owned<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
   impl <'a> ::capnp::traits::OwnedStruct<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
   impl ::capnp::traits::Pipelined for Owned { type Pipeline = Pipeline; }
@@ -180,7 +180,7 @@ pub mod source_file {
   }
 
   impl <'a,> Reader<'a,>  {
-    pub fn reborrow(&self) -> Reader<> {
+    pub fn reborrow(&self) -> Reader<'_,> {
       Reader { .. *self }
     }
 
@@ -255,7 +255,7 @@ pub mod source_file {
     }
   }
 
-  impl <'a,> ::capnp::traits::SetPointerBuilder<Builder<'a,>> for Reader<'a,>  {
+  impl <'a,> ::capnp::traits::SetPointerBuilder for Reader<'a,>  {
     fn set_pointer_builder<'b>(pointer: ::capnp::private::layout::PointerBuilder<'b>, value: Reader<'a,>, canonicalize: bool) -> ::capnp::Result<()> { pointer.set_struct(&value.reader, canonicalize) }
   }
 
@@ -263,10 +263,10 @@ pub mod source_file {
     pub fn into_reader(self) -> Reader<'a,> {
       ::capnp::traits::FromStructReader::new(self.builder.into_reader())
     }
-    pub fn reborrow(&mut self) -> Builder<> {
+    pub fn reborrow(&mut self) -> Builder<'_,> {
       Builder { .. *self }
     }
-    pub fn reborrow_as_reader(&self) -> Reader<> {
+    pub fn reborrow_as_reader(&self) -> Reader<'_,> {
       ::capnp::traits::FromStructReader::new(self.builder.into_reader())
     }
 
@@ -286,7 +286,7 @@ pub mod source_file {
       ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(0), ::core::option::Option::None)
     }
     #[inline]
-    pub fn set_sha256(&mut self, value: ::capnp::data::Reader)  {
+    pub fn set_sha256(&mut self, value: ::capnp::data::Reader<'_>)  {
       self.builder.get_pointer_field(0).set_data(value);
     }
     #[inline]
@@ -301,7 +301,7 @@ pub mod source_file {
       ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(1), ::core::option::Option::None)
     }
     #[inline]
-    pub fn set_path(&mut self, value: ::capnp::text::Reader)  {
+    pub fn set_path(&mut self, value: ::capnp::text::Reader<'_>)  {
       self.builder.get_pointer_field(1).set_text(value);
     }
     #[inline]
@@ -326,7 +326,7 @@ pub mod source_file {
       ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(2), ::core::option::Option::None)
     }
     #[inline]
-    pub fn set_index<'b>(&mut self, value: crate::index_capnp::index::Reader<'b>) -> ::capnp::Result<()> {
+    pub fn set_index(&mut self, value: crate::index_capnp::index::Reader<'_>) -> ::capnp::Result<()> {
       ::capnp::traits::SetPointerBuilder::set_pointer_builder(self.builder.get_pointer_field(2), value, false)
     }
     #[inline]
@@ -375,7 +375,7 @@ pub mod source_file {
 
   pub mod modified {
     #[derive(Copy, Clone)]
-    pub struct Owned;
+    pub struct Owned(());
     impl <'a> ::capnp::traits::Owned<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
     impl <'a> ::capnp::traits::OwnedStruct<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
     impl ::capnp::traits::Pipelined for Owned { type Pipeline = Pipeline; }
@@ -412,7 +412,7 @@ pub mod source_file {
     }
 
     impl <'a,> Reader<'a,>  {
-      pub fn reborrow(&self) -> Reader<> {
+      pub fn reborrow(&self) -> Reader<'_,> {
         Reader { .. *self }
       }
 
@@ -459,7 +459,7 @@ pub mod source_file {
       }
     }
 
-    impl <'a,> ::capnp::traits::SetPointerBuilder<Builder<'a,>> for Reader<'a,>  {
+    impl <'a,> ::capnp::traits::SetPointerBuilder for Reader<'a,>  {
       fn set_pointer_builder<'b>(pointer: ::capnp::private::layout::PointerBuilder<'b>, value: Reader<'a,>, canonicalize: bool) -> ::capnp::Result<()> { pointer.set_struct(&value.reader, canonicalize) }
     }
 
@@ -467,10 +467,10 @@ pub mod source_file {
       pub fn into_reader(self) -> Reader<'a,> {
         ::capnp::traits::FromStructReader::new(self.builder.into_reader())
       }
-      pub fn reborrow(&mut self) -> Builder<> {
+      pub fn reborrow(&mut self) -> Builder<'_,> {
         Builder { .. *self }
       }
-      pub fn reborrow_as_reader(&self) -> Reader<> {
+      pub fn reborrow_as_reader(&self) -> Reader<'_,> {
         ::capnp::traits::FromStructReader::new(self.builder.into_reader())
       }
 
@@ -513,7 +513,7 @@ pub mod source_file {
 
 pub mod source_block {
   #[derive(Copy, Clone)]
-  pub struct Owned;
+  pub struct Owned(());
   impl <'a> ::capnp::traits::Owned<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
   impl <'a> ::capnp::traits::OwnedStruct<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
   impl ::capnp::traits::Pipelined for Owned { type Pipeline = Pipeline; }
@@ -550,7 +550,7 @@ pub mod source_block {
   }
 
   impl <'a,> Reader<'a,>  {
-    pub fn reborrow(&self) -> Reader<> {
+    pub fn reborrow(&self) -> Reader<'_,> {
       Reader { .. *self }
     }
 
@@ -611,7 +611,7 @@ pub mod source_block {
     }
   }
 
-  impl <'a,> ::capnp::traits::SetPointerBuilder<Builder<'a,>> for Reader<'a,>  {
+  impl <'a,> ::capnp::traits::SetPointerBuilder for Reader<'a,>  {
     fn set_pointer_builder<'b>(pointer: ::capnp::private::layout::PointerBuilder<'b>, value: Reader<'a,>, canonicalize: bool) -> ::capnp::Result<()> { pointer.set_struct(&value.reader, canonicalize) }
   }
 
@@ -619,10 +619,10 @@ pub mod source_block {
     pub fn into_reader(self) -> Reader<'a,> {
       ::capnp::traits::FromStructReader::new(self.builder.into_reader())
     }
-    pub fn reborrow(&mut self) -> Builder<> {
+    pub fn reborrow(&mut self) -> Builder<'_,> {
       Builder { .. *self }
     }
-    pub fn reborrow_as_reader(&self) -> Reader<> {
+    pub fn reborrow_as_reader(&self) -> Reader<'_,> {
       ::capnp::traits::FromStructReader::new(self.builder.into_reader())
     }
 
@@ -650,7 +650,7 @@ pub mod source_block {
       ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(0), ::core::option::Option::None)
     }
     #[inline]
-    pub fn set_index<'b>(&mut self, value: crate::index_capnp::index::Reader<'b>) -> ::capnp::Result<()> {
+    pub fn set_index(&mut self, value: crate::index_capnp::index::Reader<'_>) -> ::capnp::Result<()> {
       ::capnp::traits::SetPointerBuilder::set_pointer_builder(self.builder.get_pointer_field(0), value, false)
     }
     #[inline]
@@ -665,7 +665,7 @@ pub mod source_block {
       ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(1), ::core::option::Option::None)
     }
     #[inline]
-    pub fn set_chronology<'b>(&mut self, value: crate::index_capnp::chronology::Reader<'b>) -> ::capnp::Result<()> {
+    pub fn set_chronology(&mut self, value: crate::index_capnp::chronology::Reader<'_>) -> ::capnp::Result<()> {
       ::capnp::traits::SetPointerBuilder::set_pointer_builder(self.builder.get_pointer_field(1), value, false)
     }
     #[inline]
@@ -700,7 +700,7 @@ pub mod source_block {
 
 pub mod index {
   #[derive(Copy, Clone)]
-  pub struct Owned;
+  pub struct Owned(());
   impl <'a> ::capnp::traits::Owned<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
   impl <'a> ::capnp::traits::OwnedStruct<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
   impl ::capnp::traits::Pipelined for Owned { type Pipeline = Pipeline; }
@@ -737,7 +737,7 @@ pub mod index {
   }
 
   impl <'a,> Reader<'a,>  {
-    pub fn reborrow(&self) -> Reader<> {
+    pub fn reborrow(&self) -> Reader<'_,> {
       Reader { .. *self }
     }
 
@@ -788,7 +788,7 @@ pub mod index {
     }
   }
 
-  impl <'a,> ::capnp::traits::SetPointerBuilder<Builder<'a,>> for Reader<'a,>  {
+  impl <'a,> ::capnp::traits::SetPointerBuilder for Reader<'a,>  {
     fn set_pointer_builder<'b>(pointer: ::capnp::private::layout::PointerBuilder<'b>, value: Reader<'a,>, canonicalize: bool) -> ::capnp::Result<()> { pointer.set_struct(&value.reader, canonicalize) }
   }
 
@@ -796,10 +796,10 @@ pub mod index {
     pub fn into_reader(self) -> Reader<'a,> {
       ::capnp::traits::FromStructReader::new(self.builder.into_reader())
     }
-    pub fn reborrow(&mut self) -> Builder<> {
+    pub fn reborrow(&mut self) -> Builder<'_,> {
       Builder { .. *self }
     }
-    pub fn reborrow_as_reader(&self) -> Reader<> {
+    pub fn reborrow_as_reader(&self) -> Reader<'_,> {
       ::capnp::traits::FromStructReader::new(self.builder.into_reader())
     }
 
@@ -860,7 +860,7 @@ pub mod index {
 
   pub mod lines {
     #[derive(Copy, Clone)]
-    pub struct Owned;
+    pub struct Owned(());
     impl <'a> ::capnp::traits::Owned<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
     impl <'a> ::capnp::traits::OwnedStruct<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
     impl ::capnp::traits::Pipelined for Owned { type Pipeline = Pipeline; }
@@ -897,7 +897,7 @@ pub mod index {
     }
 
     impl <'a,> Reader<'a,>  {
-      pub fn reborrow(&self) -> Reader<> {
+      pub fn reborrow(&self) -> Reader<'_,> {
         Reader { .. *self }
       }
 
@@ -944,7 +944,7 @@ pub mod index {
       }
     }
 
-    impl <'a,> ::capnp::traits::SetPointerBuilder<Builder<'a,>> for Reader<'a,>  {
+    impl <'a,> ::capnp::traits::SetPointerBuilder for Reader<'a,>  {
       fn set_pointer_builder<'b>(pointer: ::capnp::private::layout::PointerBuilder<'b>, value: Reader<'a,>, canonicalize: bool) -> ::capnp::Result<()> { pointer.set_struct(&value.reader, canonicalize) }
     }
 
@@ -952,10 +952,10 @@ pub mod index {
       pub fn into_reader(self) -> Reader<'a,> {
         ::capnp::traits::FromStructReader::new(self.builder.into_reader())
       }
-      pub fn reborrow(&mut self) -> Builder<> {
+      pub fn reborrow(&mut self) -> Builder<'_,> {
         Builder { .. *self }
       }
-      pub fn reborrow_as_reader(&self) -> Reader<> {
+      pub fn reborrow_as_reader(&self) -> Reader<'_,> {
         ::capnp::traits::FromStructReader::new(self.builder.into_reader())
       }
 
@@ -997,7 +997,7 @@ pub mod index {
 
   pub mod timestamps {
     #[derive(Copy, Clone)]
-    pub struct Owned;
+    pub struct Owned(());
     impl <'a> ::capnp::traits::Owned<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
     impl <'a> ::capnp::traits::OwnedStruct<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
     impl ::capnp::traits::Pipelined for Owned { type Pipeline = Pipeline; }
@@ -1034,7 +1034,7 @@ pub mod index {
     }
 
     impl <'a,> Reader<'a,>  {
-      pub fn reborrow(&self) -> Reader<> {
+      pub fn reborrow(&self) -> Reader<'_,> {
         Reader { .. *self }
       }
 
@@ -1081,7 +1081,7 @@ pub mod index {
       }
     }
 
-    impl <'a,> ::capnp::traits::SetPointerBuilder<Builder<'a,>> for Reader<'a,>  {
+    impl <'a,> ::capnp::traits::SetPointerBuilder for Reader<'a,>  {
       fn set_pointer_builder<'b>(pointer: ::capnp::private::layout::PointerBuilder<'b>, value: Reader<'a,>, canonicalize: bool) -> ::capnp::Result<()> { pointer.set_struct(&value.reader, canonicalize) }
     }
 
@@ -1089,10 +1089,10 @@ pub mod index {
       pub fn into_reader(self) -> Reader<'a,> {
         ::capnp::traits::FromStructReader::new(self.builder.into_reader())
       }
-      pub fn reborrow(&mut self) -> Builder<> {
+      pub fn reborrow(&mut self) -> Builder<'_,> {
         Builder { .. *self }
       }
-      pub fn reborrow_as_reader(&self) -> Reader<> {
+      pub fn reborrow_as_reader(&self) -> Reader<'_,> {
         ::capnp::traits::FromStructReader::new(self.builder.into_reader())
       }
 
@@ -1143,7 +1143,7 @@ pub mod index {
 
     pub mod min {
       #[derive(Copy, Clone)]
-      pub struct Owned;
+      pub struct Owned(());
       impl <'a> ::capnp::traits::Owned<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
       impl <'a> ::capnp::traits::OwnedStruct<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
       impl ::capnp::traits::Pipelined for Owned { type Pipeline = Pipeline; }
@@ -1180,7 +1180,7 @@ pub mod index {
       }
 
       impl <'a,> Reader<'a,>  {
-        pub fn reborrow(&self) -> Reader<> {
+        pub fn reborrow(&self) -> Reader<'_,> {
           Reader { .. *self }
         }
 
@@ -1227,7 +1227,7 @@ pub mod index {
         }
       }
 
-      impl <'a,> ::capnp::traits::SetPointerBuilder<Builder<'a,>> for Reader<'a,>  {
+      impl <'a,> ::capnp::traits::SetPointerBuilder for Reader<'a,>  {
         fn set_pointer_builder<'b>(pointer: ::capnp::private::layout::PointerBuilder<'b>, value: Reader<'a,>, canonicalize: bool) -> ::capnp::Result<()> { pointer.set_struct(&value.reader, canonicalize) }
       }
 
@@ -1235,10 +1235,10 @@ pub mod index {
         pub fn into_reader(self) -> Reader<'a,> {
           ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
-        pub fn reborrow(&mut self) -> Builder<> {
+        pub fn reborrow(&mut self) -> Builder<'_,> {
           Builder { .. *self }
         }
-        pub fn reborrow_as_reader(&self) -> Reader<> {
+        pub fn reborrow_as_reader(&self) -> Reader<'_,> {
           ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
 
@@ -1280,7 +1280,7 @@ pub mod index {
 
     pub mod max {
       #[derive(Copy, Clone)]
-      pub struct Owned;
+      pub struct Owned(());
       impl <'a> ::capnp::traits::Owned<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
       impl <'a> ::capnp::traits::OwnedStruct<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
       impl ::capnp::traits::Pipelined for Owned { type Pipeline = Pipeline; }
@@ -1317,7 +1317,7 @@ pub mod index {
       }
 
       impl <'a,> Reader<'a,>  {
-        pub fn reborrow(&self) -> Reader<> {
+        pub fn reborrow(&self) -> Reader<'_,> {
           Reader { .. *self }
         }
 
@@ -1364,7 +1364,7 @@ pub mod index {
         }
       }
 
-      impl <'a,> ::capnp::traits::SetPointerBuilder<Builder<'a,>> for Reader<'a,>  {
+      impl <'a,> ::capnp::traits::SetPointerBuilder for Reader<'a,>  {
         fn set_pointer_builder<'b>(pointer: ::capnp::private::layout::PointerBuilder<'b>, value: Reader<'a,>, canonicalize: bool) -> ::capnp::Result<()> { pointer.set_struct(&value.reader, canonicalize) }
       }
 
@@ -1372,10 +1372,10 @@ pub mod index {
         pub fn into_reader(self) -> Reader<'a,> {
           ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
-        pub fn reborrow(&mut self) -> Builder<> {
+        pub fn reborrow(&mut self) -> Builder<'_,> {
           Builder { .. *self }
         }
-        pub fn reborrow_as_reader(&self) -> Reader<> {
+        pub fn reborrow_as_reader(&self) -> Reader<'_,> {
           ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
 
@@ -1419,7 +1419,7 @@ pub mod index {
 
 pub mod chronology {
   #[derive(Copy, Clone)]
-  pub struct Owned;
+  pub struct Owned(());
   impl <'a> ::capnp::traits::Owned<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
   impl <'a> ::capnp::traits::OwnedStruct<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
   impl ::capnp::traits::Pipelined for Owned { type Pipeline = Pipeline; }
@@ -1456,7 +1456,7 @@ pub mod chronology {
   }
 
   impl <'a,> Reader<'a,>  {
-    pub fn reborrow(&self) -> Reader<> {
+    pub fn reborrow(&self) -> Reader<'_,> {
       Reader { .. *self }
     }
 
@@ -1513,7 +1513,7 @@ pub mod chronology {
     }
   }
 
-  impl <'a,> ::capnp::traits::SetPointerBuilder<Builder<'a,>> for Reader<'a,>  {
+  impl <'a,> ::capnp::traits::SetPointerBuilder for Reader<'a,>  {
     fn set_pointer_builder<'b>(pointer: ::capnp::private::layout::PointerBuilder<'b>, value: Reader<'a,>, canonicalize: bool) -> ::capnp::Result<()> { pointer.set_struct(&value.reader, canonicalize) }
   }
 
@@ -1521,10 +1521,10 @@ pub mod chronology {
     pub fn into_reader(self) -> Reader<'a,> {
       ::capnp::traits::FromStructReader::new(self.builder.into_reader())
     }
-    pub fn reborrow(&mut self) -> Builder<> {
+    pub fn reborrow(&mut self) -> Builder<'_,> {
       Builder { .. *self }
     }
-    pub fn reborrow_as_reader(&self) -> Reader<> {
+    pub fn reborrow_as_reader(&self) -> Reader<'_,> {
       ::capnp::traits::FromStructReader::new(self.builder.into_reader())
     }
 
@@ -1592,7 +1592,7 @@ pub mod chronology {
 
   pub mod offsets {
     #[derive(Copy, Clone)]
-    pub struct Owned;
+    pub struct Owned(());
     impl <'a> ::capnp::traits::Owned<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
     impl <'a> ::capnp::traits::OwnedStruct<'a> for Owned { type Reader = Reader<'a>; type Builder = Builder<'a>; }
     impl ::capnp::traits::Pipelined for Owned { type Pipeline = Pipeline; }
@@ -1629,7 +1629,7 @@ pub mod chronology {
     }
 
     impl <'a,> Reader<'a,>  {
-      pub fn reborrow(&self) -> Reader<> {
+      pub fn reborrow(&self) -> Reader<'_,> {
         Reader { .. *self }
       }
 
@@ -1682,7 +1682,7 @@ pub mod chronology {
       }
     }
 
-    impl <'a,> ::capnp::traits::SetPointerBuilder<Builder<'a,>> for Reader<'a,>  {
+    impl <'a,> ::capnp::traits::SetPointerBuilder for Reader<'a,>  {
       fn set_pointer_builder<'b>(pointer: ::capnp::private::layout::PointerBuilder<'b>, value: Reader<'a,>, canonicalize: bool) -> ::capnp::Result<()> { pointer.set_struct(&value.reader, canonicalize) }
     }
 
@@ -1690,10 +1690,10 @@ pub mod chronology {
       pub fn into_reader(self) -> Reader<'a,> {
         ::capnp::traits::FromStructReader::new(self.builder.into_reader())
       }
-      pub fn reborrow(&mut self) -> Builder<> {
+      pub fn reborrow(&mut self) -> Builder<'_,> {
         Builder { .. *self }
       }
-      pub fn reborrow_as_reader(&self) -> Reader<> {
+      pub fn reborrow_as_reader(&self) -> Reader<'_,> {
         ::capnp::traits::FromStructReader::new(self.builder.into_reader())
       }
 

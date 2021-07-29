@@ -2,8 +2,10 @@
 use std::boxed::Box;
 use std::io;
 use std::num::{ParseIntError, TryFromIntError};
+use std::path::PathBuf;
 
 // third-party imports
+use ansi_term::Colour;
 use config::ConfigError;
 use thiserror::Error;
 
@@ -18,6 +20,12 @@ pub enum Error {
     TryFromIntError(#[from] TryFromIntError),
     #[error("failed to load configuration: {0}")]
     Config(#[from] ConfigError),
+    #[error(transparent)]
+    Infallible(#[from] std::convert::Infallible),
+    #[error(transparent)]
+    Capnp(#[from] capnp::Error),
+    #[error(transparent)]
+    Bincode(#[from] bincode::Error),
     #[error(transparent)]
     Boxed(#[from] Box<dyn std::error::Error + std::marker::Send>),
     #[error("file {filename:?} not found")]
@@ -53,7 +61,31 @@ pub enum Error {
     WrongFieldFilter(String),
     #[error("wrong regular expression: {0}")]
     WrongRegularExpression(#[from] regex::Error),
+    #[error("inconsistent index: {details}")]
+    InconsistentIndex { details: String },
+    #[error("failed to open file '{}' for reading: {source}", HILITE.paint(.path.to_string_lossy()))]
+    FailedToOpenFileForReading {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("failed to open file '{}' for writing: {source}", HILITE.paint(.path.to_string_lossy()))]
+    FailedToOpenFileForWriting {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("failed to get metadata of file '{}': {source}", HILITE.paint(.path.to_string_lossy()))]
+    FailedToGetFileMetadata {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("invalid index header")]
+    InvalidIndexHeader,
 }
 
 /// Result is an alias for standard result with bound Error type.
 pub type Result<T> = std::result::Result<T, Error>;
+
+pub const HILITE: Colour = Colour::Yellow;
