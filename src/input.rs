@@ -15,7 +15,8 @@ use flate2::bufread::GzDecoder;
 use crate::error::Result;
 use crate::index::{Index, Indexer, SourceBlock};
 use crate::pool::SQPool;
-use crate::replay::ReplayingReader;
+use crate::replay::{MinimalCache, ReplayBufBuilder, ReplayBufReader};
+use crate::tee::TeeReader;
 
 // ---
 
@@ -50,11 +51,14 @@ impl InputReference {
     pub fn index(&self, indexer: &Indexer) -> Result<IndexedInput> {
         match self {
             InputReference::Stdin => {
-                let mut stream = Box::new(ReplayingReader::new(Box::new(stdin())));
-                let index = indexer.index_from_stream(&mut stream)?;
-                let mut stream = Box::new(Mutex::new());
-                let stream = stream.lock().unwrap();
-                Ok(IndexedInput::new("<stdin>".into(), stream, index))
+                let mut tee = TeeReader::new(stdin(), ReplayBufBuilder::new());
+                let index = indexer.index_from_stream(&mut tee)?;
+                let buf = tee.into_writer().result()?;
+                Ok(IndexedInput::new(
+                    "<stdin>".into(),
+                    Box::new(Mutex::new(ReplayBufReader::<MinimalCache>::new(buf))),
+                    index,
+                ))
             }
             InputReference::File(filename) => IndexedInput::open(&filename, indexer),
         }

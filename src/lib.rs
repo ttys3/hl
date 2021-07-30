@@ -23,6 +23,7 @@ mod model;
 mod pool;
 mod replay;
 mod scanning;
+mod tee;
 
 // conditional public modules
 #[cfg_attr(unix, path = "signal_unix.rs")]
