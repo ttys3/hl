@@ -15,7 +15,7 @@ use flate2::bufread::GzDecoder;
 use crate::error::Result;
 use crate::index::{Index, Indexer, SourceBlock};
 use crate::pool::SQPool;
-use crate::replay::{MinimalCache, ReplayBufBuilder, ReplayBufReader};
+use crate::replay::{LruCache, ReplayBufBuilder, ReplayBufReader};
 use crate::tee::TeeReader;
 
 // ---
@@ -56,7 +56,7 @@ impl InputReference {
                 let buf = tee.into_writer().result()?;
                 Ok(IndexedInput::new(
                     "<stdin>".into(),
-                    Box::new(Mutex::new(ReplayBufReader::<MinimalCache>::new(buf))),
+                    Box::new(Mutex::new(ReplayBufReader::with_cache(buf, LruCache::new(8)))),
                     index,
                 ))
             }

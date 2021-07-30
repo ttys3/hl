@@ -1,14 +1,15 @@
 // std imports
 use std::{
     cmp::min,
+    collections::{btree_map::Entry as BTreeEntry, hash_map::Entry, BTreeMap, HashMap},
     convert::{TryFrom, TryInto},
     io::{Error, ErrorKind, Read, Result, Seek, SeekFrom, Write},
     mem::replace,
     num::NonZeroUsize,
+    time::Instant,
 };
 
 // third-party imports
-use clru::CLruCache;
 use snap::{read::FrameDecoder, write::FrameEncoder};
 
 // ---
@@ -21,6 +22,12 @@ type Buf = Vec<u8>;
 
 // ---
 
+pub trait Cache {
+    fn cache<F: FnOnce() -> Result<Buf>>(&mut self, index: usize, f: F) -> Result<&[u8]>;
+}
+
+// ---
+
 pub struct ReplayBuf {
     segment_size: NonZeroUsize,
     segments: Vec<CompressedBuf>,
@@ -28,24 +35,12 @@ pub struct ReplayBuf {
 }
 
 impl ReplayBuf {
-    pub fn new() -> Self {
-        Self::with_segment_size(DEFAULT_SEGMENT_SIZE.unwrap())
-    }
-
-    pub fn with_segment_size(segment_size: NonZeroUsize) -> Self {
+    fn new(segment_size: NonZeroUsize) -> Self {
         Self {
             segment_size,
             segments: Vec::new(),
             size: 0,
         }
-    }
-
-    pub fn bytes(&self) -> usize {
-        self.size
-    }
-
-    pub fn segments(&self) -> &Vec<CompressedBuf> {
-        &self.segments
     }
 }
 
@@ -66,13 +61,12 @@ pub struct ReplayBufBuilder {
 
 impl ReplayBufBuilder {
     pub fn new() -> Self {
-        Self::with_segment_size(DEFAULT_SEGMENT_SIZE.unwrap())
+        Self::build().new()
     }
 
-    pub fn with_segment_size(segment_size: NonZeroUsize) -> Self {
-        Self {
-            buf: ReplayBuf::with_segment_size(segment_size),
-            scratch: ReusableBuf::new(usize::from(segment_size)),
+    pub fn build() -> ReplayBufBuilderBuilder {
+        ReplayBufBuilderBuilder {
+            segment_size: DEFAULT_SEGMENT_SIZE.unwrap(),
         }
     }
 
@@ -122,23 +116,22 @@ impl Write for ReplayBufBuilder {
 
 // ---
 
-pub trait Cache: Default {
-    fn cache<F: FnOnce() -> Result<Buf>>(&mut self, index: usize, f: F) -> Result<&[u8]>;
+pub struct ReplayBufBuilderBuilder {
+    segment_size: NonZeroUsize,
 }
 
-// ---
+impl ReplayBufBuilderBuilder {
+    #[allow(dead_code)]
+    pub fn with_segment_size(mut self, segment_size: NonZeroUsize) -> Self {
+        self.segment_size = segment_size;
+        self
+    }
 
-#[derive(Default)]
-pub struct MinimalCache {
-    data: Option<(usize, Buf)>,
-}
-
-impl Cache for MinimalCache {
-    fn cache<F: FnOnce() -> Result<Buf>>(&mut self, index: usize, f: F) -> Result<&[u8]> {
-        if self.data.as_ref().map(|v| v.0) != Some(index) {
-            self.data = Some((index, f()?));
+    pub fn new(self) -> ReplayBufBuilder {
+        ReplayBufBuilder {
+            buf: ReplayBuf::new(self.segment_size),
+            scratch: ReusableBuf::new(self.segment_size.get()),
         }
-        Ok(&self.data.as_ref().unwrap().1)
     }
 }
 
@@ -150,7 +143,7 @@ pub struct ReplayBufReader<C: Cache = MinimalCache> {
     position: usize,
 }
 
-impl<C: Cache> ReplayBufReader<C> {
+impl<C: Cache + Default> ReplayBufReader<C> {
     pub fn new(buf: ReplayBuf) -> Self {
         Self {
             buf,
@@ -158,7 +151,19 @@ impl<C: Cache> ReplayBufReader<C> {
             position: 0,
         }
     }
+}
 
+impl<C: Cache> ReplayBufReader<C> {
+    pub fn with_cache(buf: ReplayBuf, cache: C) -> Self {
+        Self {
+            buf,
+            cache,
+            position: 0,
+        }
+    }
+}
+
+impl<C: Cache> ReplayBufReader<C> {
     #[inline(always)]
     fn segment_size(&self) -> NonZeroUsize {
         self.buf.segment_size
@@ -221,212 +226,6 @@ impl<C: Cache> Seek for ReplayBufReader<C> {
         let pos = min(pos, self.buf.size);
         self.position = pos;
         u64::try_from(pos).map_err(|e| Error::new(ErrorKind::InvalidInput, e))
-    }
-}
-
-// ---
-
-pub struct ReplayingReader<I> {
-    inner: I,
-    segment_size: NonZeroUsize,
-    data: Vec<CompressedBuf>,
-    scratch: ReusableBuf,
-    cache: CLruCache<usize, Buf>,
-    position: usize,
-    end_position: Option<usize>,
-}
-
-impl<I: Read> ReplayingReader<I> {
-    pub fn builder(inner: I) -> ReplayingReaderBuilder<I> {
-        ReplayingReaderBuilder::new(inner)
-    }
-
-    pub fn new(inner: I) -> Self {
-        Self::builder(inner).build()
-    }
-
-    fn segment(&mut self, index: usize) -> Result<&[u8]> {
-        if index >= self.data.len() {
-            panic!("logic error")
-        }
-        if index == self.data.len() {
-            if let Some(buf) = self.fetch()? {
-                Ok(self.cache(index, buf))
-            } else {
-                Ok(self.scratch.bytes())
-            }
-        } else {
-            Ok(self.reload(index)?)
-        }
-    }
-
-    fn fetch(&mut self) -> Result<Option<Buf>> {
-        let n = self.inner.read(self.scratch.backstage())?;
-        self.scratch.extend(n);
-        if self.scratch.full() {
-            self.data.push(self.scratch.bytes().try_into()?);
-            Ok(Some(self.scratch.replace(self.new_buf())))
-        } else {
-            Ok(None)
-        }
-    }
-
-    fn reload(&mut self, index: usize) -> Result<&Buf> {
-        let ss = usize::from(self.segment_size);
-        let data = &mut self.data;
-        let put = |index: &usize, _| -> Result<Buf> {
-            let mut buf = vec![0; ss];
-            data[*index].decode(&mut buf)?;
-            Ok(buf)
-        };
-        let modify = |_: &usize, _: &mut Buf, _| Ok(());
-        Ok(self.cache.try_put_or_modify(index, put, modify, ())?)
-    }
-
-    fn cache(&mut self, index: usize, buf: Buf) -> &Buf {
-        self.cache.put(index, buf);
-        &self.cache.get(&index).unwrap()
-    }
-
-    fn new_buf(&self) -> Buf {
-        vec![0; usize::from(self.segment_size)]
-    }
-
-    fn from_current(&self, offset: i64) -> Option<usize> {
-        usize::try_from(i64::try_from(self.position).ok()?.checked_add(offset)?).ok()
-    }
-
-    fn from_end(&mut self, offset: i64) -> Result<usize> {
-        let total_size = self.detect_total_size()?;
-        self.before_pos(total_size, offset)
-            .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "position out of range"))
-    }
-
-    fn before_pos(&self, position: usize, offset: i64) -> Option<usize> {
-        usize::try_from(i64::try_from(position).ok()?.checked_sub(offset)?).ok()
-    }
-
-    fn detect_total_size(&mut self) -> Result<usize> {
-        panic!("not implemented")
-    }
-
-    fn seek_forward(&mut self, position: usize) -> Result<usize> {
-        while self.fetch_position() < position {
-            if self.fetch()?.is_none() {
-                return Ok(self.fetch_position());
-            }
-        }
-        self.position = position;
-        Ok(position)
-    }
-
-    fn fetch_position(&self) -> usize {
-        self.fetch_position_aligned() + self.scratch.len()
-    }
-
-    fn fetch_position_aligned(&self) -> usize {
-        self.data.len() * usize::from(self.segment_size)
-    }
-}
-
-impl<I: Read> Read for ReplayingReader<I> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let mut i = 0;
-        let ss = usize::from(self.segment_size);
-        loop {
-            let segment = self.position / self.segment_size;
-            let offset = self.position % self.segment_size;
-            let data = self.segment(segment)?;
-            let k = data.len();
-            let n = min(buf.len() - i, data.len() - offset);
-            buf[i..i + n].copy_from_slice(&data[offset..offset + n]);
-            i += n;
-            self.position += n;
-            if k != ss || i == buf.len() {
-                return Ok(i);
-            }
-        }
-    }
-}
-
-impl<I: Read> Seek for ReplayingReader<I> {
-    fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
-        let mut pos = match pos {
-            SeekFrom::Start(pos) => usize::try_from(pos).map_err(|e| Error::new(ErrorKind::InvalidInput, e)),
-            SeekFrom::Current(pos) => self
-                .from_current(pos)
-                .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "position out of range")),
-            SeekFrom::End(pos) => self.from_end(pos),
-        }?;
-        let n = self.data.len() * usize::from(self.segment_size);
-        if pos > n {
-            pos = self.seek_forward(pos)?;
-        }
-        self.position = pos;
-        u64::try_from(pos).map_err(|e| Error::new(ErrorKind::InvalidInput, e))
-    }
-}
-
-// ---
-
-pub struct ReplayingReaderBuilder<I> {
-    inner: I,
-    segment_size: NonZeroUsize,
-    cache_size: NonZeroUsize,
-}
-
-impl<I> ReplayingReaderBuilder<I> {
-    pub fn new(inner: I) -> Self {
-        Self {
-            inner,
-            segment_size: NonZeroUsize::new(256 * 1024).unwrap(),
-            cache_size: NonZeroUsize::new(4).unwrap(),
-        }
-    }
-
-    pub fn segment_size(mut self, segment_size: usize) -> Self {
-        self.segment_size = NonZeroUsize::new(segment_size).unwrap();
-        self
-    }
-
-    pub fn cache_size(mut self, segment_count: usize) -> Self {
-        self.cache_size = NonZeroUsize::new(segment_count).unwrap();
-        self
-    }
-
-    pub fn build(self) -> ReplayingReader<I> {
-        ReplayingReader {
-            inner: self.inner,
-            segment_size: self.segment_size,
-            data: Vec::new(),
-            scratch: ReusableBuf::new(usize::from(self.segment_size)),
-            cache: CLruCache::new(self.cache_size),
-            position: 0,
-            end_position: None,
-        }
-    }
-}
-
-// ---
-
-enum Segment<T> {
-    Complete(T),
-    Incomplete(T),
-}
-
-impl<T> Segment<T> {
-    fn data(&self) -> &T {
-        match self {
-            Self::Complete(data) => data,
-            Self::Incomplete(data) => data,
-        }
-    }
-
-    fn is_complete(&self) -> bool {
-        match self {
-            Self::Complete(_) => true,
-            Self::Incomplete(_) => false,
-        }
     }
 }
 
@@ -509,5 +308,70 @@ impl ReusableBuf {
     fn replace(&mut self, buf: Buf) -> Buf {
         self.len = 0;
         replace(&mut self.buf, buf)
+    }
+}
+
+// ---
+
+#[derive(Default)]
+pub struct MinimalCache {
+    data: Option<(usize, Buf)>,
+}
+
+impl Cache for MinimalCache {
+    fn cache<F: FnOnce() -> Result<Buf>>(&mut self, index: usize, f: F) -> Result<&[u8]> {
+        if self.data.as_ref().map(|v| v.0) != Some(index) {
+            self.data = Some((index, f()?));
+        }
+        Ok(&self.data.as_ref().unwrap().1)
+    }
+}
+
+// ---
+
+#[derive(Default)]
+pub struct LruCache {
+    limit: usize,
+    data: BTreeMap<(Instant, usize), Buf>,
+    timestamps: HashMap<usize, Instant>,
+}
+
+impl LruCache {
+    pub fn new(limit: usize) -> Self {
+        Self {
+            limit,
+            data: BTreeMap::new(),
+            timestamps: HashMap::new(),
+        }
+    }
+}
+
+impl Cache for LruCache {
+    fn cache<F: FnOnce() -> Result<Buf>>(&mut self, index: usize, f: F) -> Result<&[u8]> {
+        let now = Instant::now();
+        if self.timestamps.len() == self.limit && !self.timestamps.contains_key(&index) {
+            if let Some((&(timestamp, i), &_)) = self.data.iter().next() {
+                self.timestamps.remove(&i);
+                self.data.remove(&(timestamp, i));
+            }
+        }
+
+        Ok(match self.timestamps.entry(index) {
+            Entry::Vacant(e) => {
+                e.insert(now);
+                match self.data.entry((now, index)) {
+                    BTreeEntry::Vacant(e) => e.insert(f()?),
+                    BTreeEntry::Occupied(_) => unreachable!(),
+                }
+            }
+            Entry::Occupied(mut e) => {
+                let buf = self.data.remove(&(*e.get(), index)).unwrap();
+                e.insert(now);
+                match self.data.entry((now, index)) {
+                    BTreeEntry::Vacant(e) => e.insert(buf),
+                    BTreeEntry::Occupied(_) => unreachable!(),
+                }
+            }
+        })
     }
 }

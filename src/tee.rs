@@ -1,4 +1,7 @@
+// std imports
 use std::io::{Read, Result, Write};
+
+// ---
 
 pub struct TeeReader<R: Read, W: Write> {
     reader: R,
@@ -6,6 +9,7 @@ pub struct TeeReader<R: Read, W: Write> {
 }
 
 impl<R: Read, W: Write> TeeReader<R, W> {
+    #[inline]
     pub fn new(reader: R, writer: W) -> TeeReader<R, W> {
         TeeReader {
             reader: reader,
@@ -13,14 +17,20 @@ impl<R: Read, W: Write> TeeReader<R, W> {
         }
     }
 
+    #[inline]
+    #[allow(dead_code)]
     pub fn into_reader(self) -> R {
         self.reader
     }
 
+    #[inline]
+    #[allow(dead_code)]
     pub fn into_writer(self) -> W {
         self.writer
     }
 
+    #[inline]
+    #[allow(dead_code)]
     pub fn into(self) -> (R, W) {
         (self.reader, self.writer)
     }
