@@ -143,27 +143,15 @@ pub struct ReplayBufReader<C: Cache = MinimalCache> {
     position: usize,
 }
 
-impl<C: Cache + Default> ReplayBufReader<C> {
-    pub fn new(buf: ReplayBuf) -> Self {
-        Self {
-            buf,
-            cache: C::default(),
-            position: 0,
-        }
-    }
-}
-
 impl<C: Cache> ReplayBufReader<C> {
-    pub fn with_cache(buf: ReplayBuf, cache: C) -> Self {
+    pub fn new(buf: ReplayBuf, cache: C) -> Self {
         Self {
             buf,
             cache,
             position: 0,
         }
     }
-}
 
-impl<C: Cache> ReplayBufReader<C> {
     #[inline(always)]
     fn segment_size(&self) -> NonZeroUsize {
         self.buf.segment_size
@@ -316,6 +304,12 @@ impl ReusableBuf {
 #[derive(Default)]
 pub struct MinimalCache {
     data: Option<(usize, Buf)>,
+}
+
+impl MinimalCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 impl Cache for MinimalCache {
