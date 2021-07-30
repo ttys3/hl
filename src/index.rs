@@ -44,6 +44,7 @@ use crate::types::Level;
 // types
 pub type Writer = dyn Write + Send + Sync;
 pub type Reader = dyn Read + Send + Sync;
+pub type ReaderFactory = Box<dyn FnOnce() -> Box<dyn Read> + Send + Sync>;
 
 // ---
 
@@ -118,7 +119,7 @@ impl Indexer {
     /// Builds index for the given stream.
     ///
     /// Builds the index and returns it.
-    pub fn index_from_stream(&self, input: &mut Reader) -> Result<Index> {
+    pub fn index_from_stream(&self, input: ReaderFactory) -> Result<Index> {
         self.process_file(
             &PathBuf::from("<none>"),
             Metadata {
@@ -158,14 +159,19 @@ impl Indexer {
                 });
             }
         };
-        self.process_file(&source_path, (&metadata).try_into()?, &mut input.stream, &mut output)
+        self.process_file(
+            &source_path,
+            (&metadata).try_into()?,
+            Box::new(|| Box::new(input.stream)),
+            &mut output,
+        )
     }
 
     fn process_file(
         &self,
         path: &PathBuf,
         metadata: Metadata,
-        input: &mut Reader,
+        input: ReaderFactory,
         output: &mut Writer,
     ) -> Result<Index> {
         let n = self.concurrency;
@@ -181,8 +187,9 @@ impl Indexer {
             // spawn reader thread
             let reader = scope.spawn(closure!(clone sfi, |_| -> Result<()> {
                 let mut sn: usize = 0;
+                let input = input();
                 let scanner = Scanner::new(sfi, "\n".to_string());
-                for item in scanner.items(input).with_max_segment_size(self.max_message_size.try_into()?) {
+                for item in scanner.items(&mut input).with_max_segment_size(self.max_message_size.try_into()?) {
                     if let Err(_) = txi[sn % n].send(item?) {
                         break;
                     }

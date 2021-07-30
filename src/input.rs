@@ -20,8 +20,9 @@ use crate::replay::ReplayingReader;
 // ---
 
 pub type InputStream = Box<dyn Read + Send + Sync>;
+pub type InputStreamFactory = Box<dyn FnOnce() -> Box<dyn Read> + Send + Sync>;
 
-pub type InputSeekStream = Box<Mutex<dyn ReadSeek>>;
+pub type InputSeekStream = Box<Mutex<dyn ReadSeek + Send + Sync>>;
 
 pub type BufPool = SQPool<Vec<u8>>;
 
