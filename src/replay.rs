@@ -100,7 +100,7 @@ impl Write for ReplayBufBuilder {
             let buf = &buf[k..];
             let target = self.scratch.backstage();
             let n = min(buf.len(), target.len());
-            target[..n].copy_from_slice(buf);
+            target[..n].copy_from_slice(&buf[..n]);
             self.scratch.extend(n);
             k += n;
             if self.scratch.full() {
