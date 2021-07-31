@@ -44,28 +44,28 @@ impl ReplayBuf {
     }
 }
 
-impl TryFrom<ReplayBufBuilder> for ReplayBuf {
+impl TryFrom<ReplayBufCreator> for ReplayBuf {
     type Error = Error;
 
-    fn try_from(builder: ReplayBufBuilder) -> Result<Self> {
+    fn try_from(builder: ReplayBufCreator) -> Result<Self> {
         builder.result()
     }
 }
 
 // ---
 
-pub struct ReplayBufBuilder {
+pub struct ReplayBufCreator {
     buf: ReplayBuf,
     scratch: ReusableBuf,
 }
 
-impl ReplayBufBuilder {
+impl ReplayBufCreator {
     pub fn new() -> Self {
-        Self::build().new()
+        Self::build().result()
     }
 
-    pub fn build() -> ReplayBufBuilderBuilder {
-        ReplayBufBuilderBuilder {
+    pub fn build() -> ReplayBufCreatorBuilder {
+        ReplayBufCreatorBuilder {
             segment_size: DEFAULT_SEGMENT_SIZE.unwrap(),
         }
     }
@@ -84,7 +84,7 @@ impl ReplayBufBuilder {
     }
 }
 
-impl Write for ReplayBufBuilder {
+impl Write for ReplayBufCreator {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         let mut k: usize = 0;
         if buf.len() != 0 {
@@ -114,21 +114,27 @@ impl Write for ReplayBufBuilder {
     }
 }
 
+impl From<ReplayBufCreatorBuilder> for ReplayBufCreator {
+    fn from(builder: ReplayBufCreatorBuilder) -> Self {
+        builder.result()
+    }
+}
+
 // ---
 
-pub struct ReplayBufBuilderBuilder {
+pub struct ReplayBufCreatorBuilder {
     segment_size: NonZeroUsize,
 }
 
-impl ReplayBufBuilderBuilder {
+impl ReplayBufCreatorBuilder {
     #[allow(dead_code)]
     pub fn with_segment_size(mut self, segment_size: NonZeroUsize) -> Self {
         self.segment_size = segment_size;
         self
     }
 
-    pub fn new(self) -> ReplayBufBuilder {
-        ReplayBufBuilder {
+    pub fn result(self) -> ReplayBufCreator {
+        ReplayBufCreator {
             buf: ReplayBuf::new(self.segment_size),
             scratch: ReusableBuf::new(self.segment_size.get()),
         }
@@ -137,21 +143,27 @@ impl ReplayBufBuilderBuilder {
 
 // ---
 
-pub struct ReplayBufReader<C: Cache = MinimalCache> {
+pub struct ReplayBufReader<C> {
     buf: ReplayBuf,
     cache: C,
     position: usize,
 }
 
-impl<C: Cache> ReplayBufReader<C> {
-    pub fn new(buf: ReplayBuf, cache: C) -> Self {
-        Self {
+impl ReplayBufReader<MinimalCache> {
+    pub fn new(buf: ReplayBuf) -> Self {
+        Self::build(buf).result()
+    }
+
+    pub fn build(buf: ReplayBuf) -> ReplayBufReaderBuilder<MinimalCache> {
+        ReplayBufReaderBuilder {
             buf,
-            cache,
+            cache: MinimalCache::default(),
             position: 0,
         }
     }
+}
 
+impl<C: Cache> ReplayBufReader<C> {
     #[inline(always)]
     fn segment_size(&self) -> NonZeroUsize {
         self.buf.segment_size
@@ -214,6 +226,43 @@ impl<C: Cache> Seek for ReplayBufReader<C> {
         let pos = min(pos, self.buf.size);
         self.position = pos;
         u64::try_from(pos).map_err(|e| Error::new(ErrorKind::InvalidInput, e))
+    }
+}
+
+impl<C: Cache> From<ReplayBufReaderBuilder<C>> for ReplayBufReader<C> {
+    fn from(builder: ReplayBufReaderBuilder<C>) -> Self {
+        builder.result()
+    }
+}
+
+// ---
+
+pub struct ReplayBufReaderBuilder<C> {
+    buf: ReplayBuf,
+    cache: C,
+    position: usize,
+}
+
+impl<C: Cache> ReplayBufReaderBuilder<C> {
+    pub fn with_cache<C2: Cache>(self, cache: C2) -> ReplayBufReaderBuilder<C2> {
+        ReplayBufReaderBuilder {
+            buf: self.buf,
+            cache,
+            position: self.position,
+        }
+    }
+
+    pub fn with_position(mut self, position: usize) -> Self {
+        self.position = position;
+        self
+    }
+
+    pub fn result(self) -> ReplayBufReader<C> {
+        ReplayBufReader {
+            buf: self.buf,
+            cache: self.cache,
+            position: self.position,
+        }
     }
 }
 
