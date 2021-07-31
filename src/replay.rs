@@ -433,14 +433,14 @@ impl<Key: Copy + Clone + Eq + PartialEq + Ord + PartialOrd + Hash> Cache for Lru
 pub trait ReaderFactory {
     type Reader: Read;
 
-    fn new_reader(&self) -> Self::Reader;
+    fn new_reader(&self) -> Result<Self::Reader>;
 }
 
-impl<R: Read, F: Fn() -> R> ReaderFactory for F {
+impl<R: Read, F: Fn() -> Result<R>> ReaderFactory for F {
     type Reader = R;
 
     #[inline(always)]
-    fn new_reader(&self) -> R {
+    fn new_reader(&self) -> Result<R> {
         (*self)()
     }
 }
@@ -458,7 +458,7 @@ pub struct RewindingReader<F: ReaderFactory, C> {
 }
 
 impl<F: ReaderFactory> RewindingReader<F, MinimalCache<u64>> {
-    pub fn new(factory: F) -> Self {
+    pub fn new(factory: F) -> Result<Self> {
         Self::build(factory).result()
     }
 
@@ -497,7 +497,7 @@ impl<F: ReaderFactory, C: Cache<Key = u64>> Read for RewindingReader<F, C> {
             let block = self.position / self.block_size;
             let block = self.cache.cache(block, || {
                 if block * bs < inner_pos {
-                    *inner = factory.new_reader();
+                    *inner = factory.new_reader()?;
                     inner_pos = 0;
                 }
                 if block * bs > inner_pos {
@@ -584,15 +584,15 @@ impl<F: ReaderFactory, C: Cache> RewindingReaderBuilder<F, C> {
         self
     }
 
-    pub fn result(self) -> RewindingReader<F, C> {
-        RewindingReader {
-            inner: self.factory.new_reader(),
+    pub fn result(self) -> Result<RewindingReader<F, C>> {
+        Ok(RewindingReader {
+            inner: self.factory.new_reader()?,
             factory: self.factory,
             block_size: self.block_size.try_into().unwrap(),
             cache: self.cache,
             position: self.position,
             inner_pos: 0,
             size: None,
-        }
+        })
     }
 }

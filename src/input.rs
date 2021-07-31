@@ -9,13 +9,14 @@ use std::sync::{Arc, Mutex};
 
 // third-party imports
 use ansi_term::Colour;
+use closure::closure;
 use flate2::bufread::GzDecoder;
 
 // local imports
 use crate::error::Result;
 use crate::index::{Index, Indexer, SourceBlock};
 use crate::pool::SQPool;
-use crate::replay::{ReplayBufCreator, ReplayBufReader};
+use crate::replay::{LruCache, ReplayBufCreator, ReplayBufReader, RewindingReader};
 use crate::tee::TeeReader;
 
 // ---
@@ -103,12 +104,18 @@ impl IndexedInput {
 
     pub fn open(path: &PathBuf, indexer: &Indexer) -> Result<Self> {
         let name = format!("file '{}'", Colour::Yellow.paint(path.to_string_lossy()));
-        let f = File::open(path).map_err(|e| io::Error::new(e.kind(), format!("failed to open {}: {}", name, e)))?;
+        let f = closure!(
+            clone path, clone name, || File::open(&path).map_err(|e| io::Error::new(e.kind(), format!("failed to open {}: {}", &name, e)))
+        );
         let stream: InputSeekStream = match path.extension().map(|x| x.to_str()) {
-            Some(Some("gz")) => panic!("sorting messages from gz files is not yet implemented"),
-            _ => Box::new(Mutex::new(f)),
+            Some(Some("gz")) => Box::new(Mutex::new(
+                RewindingReader::build(move || Ok(GzDecoder::new(BufReader::new(f()?))))
+                    .with_cache(LruCache::new(8))
+                    .result()?,
+            )),
+            _ => Box::new(Mutex::new(f()?)),
         };
-        let index = indexer.index(path)?;
+        let index = indexer.index(&path)?;
 
         Ok(Self::new(name, stream, index))
     }
