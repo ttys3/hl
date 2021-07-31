@@ -3,9 +3,10 @@ use std::{
     cmp::min,
     collections::{btree_map::Entry as BTreeEntry, hash_map::Entry, BTreeMap, HashMap},
     convert::{TryFrom, TryInto},
+    hash::Hash,
     io::{Error, ErrorKind, Read, Result, Seek, SeekFrom, Write},
     mem::replace,
-    num::NonZeroUsize,
+    num::{NonZeroU64, NonZeroUsize},
     time::Instant,
 };
 
@@ -23,7 +24,9 @@ type Buf = Vec<u8>;
 // ---
 
 pub trait Cache {
-    fn cache<F: FnOnce() -> Result<Buf>>(&mut self, index: usize, f: F) -> Result<&[u8]>;
+    type Key: Copy + Clone + Eq + PartialEq + Ord + PartialOrd + Hash;
+
+    fn cache<F: FnOnce() -> Result<Buf>>(&mut self, key: Self::Key, f: F) -> Result<&[u8]>;
 }
 
 // ---
@@ -149,21 +152,21 @@ pub struct ReplayBufReader<C> {
     position: usize,
 }
 
-impl ReplayBufReader<MinimalCache> {
+impl ReplayBufReader<MinimalCache<usize>> {
     pub fn new(buf: ReplayBuf) -> Self {
         Self::build(buf).result()
     }
 
-    pub fn build(buf: ReplayBuf) -> ReplayBufReaderBuilder<MinimalCache> {
+    pub fn build(buf: ReplayBuf) -> ReplayBufReaderBuilder<MinimalCache<usize>> {
         ReplayBufReaderBuilder {
             buf,
-            cache: MinimalCache::default(),
+            cache: MinimalCache::new(),
             position: 0,
         }
     }
 }
 
-impl<C: Cache> ReplayBufReader<C> {
+impl<C: Cache<Key = usize>> ReplayBufReader<C> {
     #[inline(always)]
     fn segment_size(&self) -> NonZeroUsize {
         self.buf.segment_size
@@ -173,7 +176,7 @@ impl<C: Cache> ReplayBufReader<C> {
         if index >= self.buf.segments.len() {
             panic!("logic error")
         }
-        let ss = usize::from(self.segment_size());
+        let ss = self.segment_size().get();
         let data = &mut self.buf.segments;
         self.cache.cache(index, || {
             let mut buf = vec![0; ss];
@@ -187,18 +190,22 @@ impl<C: Cache> ReplayBufReader<C> {
     }
 
     fn from_current(&self, offset: i64) -> Option<usize> {
-        usize::try_from(i64::try_from(self.position).ok()?.checked_add(offset)?).ok()
+        usize::try_from(i64::try_from(self.position).ok()?.checked_add(offset)?)
+            .ok()
+            .filter(|&v| v <= self.buf.size)
     }
 
     fn from_end(&mut self, offset: i64) -> Option<usize> {
-        usize::try_from(i64::try_from(self.buf.size).ok()?.checked_sub(offset)?).ok()
+        usize::try_from(i64::try_from(self.buf.size).ok()?.checked_add(offset)?)
+            .ok()
+            .filter(|&v| v <= self.buf.size)
     }
 }
 
-impl<C: Cache> Read for ReplayBufReader<C> {
+impl<C: Cache<Key = usize>> Read for ReplayBufReader<C> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         let mut i = 0;
-        let ss = usize::from(self.segment_size());
+        let ss = self.segment_size().get();
         loop {
             let segment = self.position / self.segment_size();
             let offset = self.position % self.segment_size();
@@ -215,7 +222,7 @@ impl<C: Cache> Read for ReplayBufReader<C> {
     }
 }
 
-impl<C: Cache> Seek for ReplayBufReader<C> {
+impl<C: Cache<Key = usize>> Seek for ReplayBufReader<C> {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
         let pos = match pos {
             SeekFrom::Start(pos) => self.from_start(pos),
@@ -350,21 +357,22 @@ impl ReusableBuf {
 
 // ---
 
-#[derive(Default)]
-pub struct MinimalCache {
-    data: Option<(usize, Buf)>,
+pub struct MinimalCache<Key> {
+    data: Option<(Key, Buf)>,
 }
 
-impl MinimalCache {
+impl<Key> MinimalCache<Key> {
     pub fn new() -> Self {
-        Self::default()
+        Self { data: None }
     }
 }
 
-impl Cache for MinimalCache {
-    fn cache<F: FnOnce() -> Result<Buf>>(&mut self, index: usize, f: F) -> Result<&[u8]> {
-        if self.data.as_ref().map(|v| v.0) != Some(index) {
-            self.data = Some((index, f()?));
+impl<Key: Copy + Clone + Eq + PartialEq + Ord + PartialOrd + Hash> Cache for MinimalCache<Key> {
+    type Key = Key;
+
+    fn cache<F: FnOnce() -> Result<Buf>>(&mut self, key: Key, f: F) -> Result<&[u8]> {
+        if self.data.as_ref().map(|v| v.0) != Some(key) {
+            self.data = Some((key, f()?));
         }
         Ok(&self.data.as_ref().unwrap().1)
     }
@@ -372,14 +380,13 @@ impl Cache for MinimalCache {
 
 // ---
 
-#[derive(Default)]
-pub struct LruCache {
+pub struct LruCache<Key> {
     limit: usize,
-    data: BTreeMap<(Instant, usize), Buf>,
-    timestamps: HashMap<usize, Instant>,
+    data: BTreeMap<(Instant, Key), Buf>,
+    timestamps: HashMap<Key, Instant>,
 }
 
-impl LruCache {
+impl<Key: Ord + PartialOrd> LruCache<Key> {
     pub fn new(limit: usize) -> Self {
         Self {
             limit,
@@ -389,32 +396,203 @@ impl LruCache {
     }
 }
 
-impl Cache for LruCache {
-    fn cache<F: FnOnce() -> Result<Buf>>(&mut self, index: usize, f: F) -> Result<&[u8]> {
+impl<Key: Copy + Clone + Eq + PartialEq + Ord + PartialOrd + Hash> Cache for LruCache<Key> {
+    type Key = Key;
+
+    fn cache<F: FnOnce() -> Result<Buf>>(&mut self, key: Key, f: F) -> Result<&[u8]> {
         let now = Instant::now();
-        if self.timestamps.len() == self.limit && !self.timestamps.contains_key(&index) {
+        if self.timestamps.len() == self.limit && !self.timestamps.contains_key(&key) {
             if let Some((&(timestamp, i), &_)) = self.data.iter().next() {
                 self.timestamps.remove(&i);
                 self.data.remove(&(timestamp, i));
             }
         }
 
-        Ok(match self.timestamps.entry(index) {
+        Ok(match self.timestamps.entry(key) {
             Entry::Vacant(e) => {
                 e.insert(now);
-                match self.data.entry((now, index)) {
+                match self.data.entry((now, key)) {
                     BTreeEntry::Vacant(e) => e.insert(f()?),
                     BTreeEntry::Occupied(_) => unreachable!(),
                 }
             }
             Entry::Occupied(mut e) => {
-                let buf = self.data.remove(&(*e.get(), index)).unwrap();
+                let buf = self.data.remove(&(*e.get(), key)).unwrap();
                 e.insert(now);
-                match self.data.entry((now, index)) {
+                match self.data.entry((now, key)) {
                     BTreeEntry::Vacant(e) => e.insert(buf),
                     BTreeEntry::Occupied(_) => unreachable!(),
                 }
             }
         })
+    }
+}
+
+// ---
+
+pub trait ReaderFactory {
+    type Reader: Read;
+
+    fn new_reader(&self) -> Self::Reader;
+}
+
+impl<R: Read, F: Fn() -> R> ReaderFactory for F {
+    type Reader = R;
+
+    #[inline(always)]
+    fn new_reader(&self) -> R {
+        (*self)()
+    }
+}
+
+// ---
+
+pub struct RewindingReader<F: ReaderFactory, C> {
+    factory: F,
+    block_size: NonZeroU64,
+    cache: C,
+    position: u64,
+    inner: F::Reader,
+    inner_pos: u64,
+    size: Option<u64>,
+}
+
+impl<F: ReaderFactory> RewindingReader<F, MinimalCache<u64>> {
+    pub fn new(factory: F) -> Self {
+        Self::build(factory).result()
+    }
+
+    pub fn build(factory: F) -> RewindingReaderBuilder<F, MinimalCache<u64>> {
+        RewindingReaderBuilder {
+            factory,
+            block_size: DEFAULT_SEGMENT_SIZE.unwrap(),
+            cache: MinimalCache::new(),
+            position: 0,
+        }
+    }
+}
+
+impl<F: ReaderFactory, C: Cache> RewindingReader<F, C> {
+    fn from_start(&self, offset: u64) -> Option<u64> {
+        Some(offset)
+    }
+
+    fn from_current(&self, offset: i64) -> Option<u64> {
+        u64::try_from(i64::try_from(self.position).ok()?.checked_add(offset)?).ok()
+    }
+
+    fn from_end(&mut self, end: u64, offset: i64) -> Option<u64> {
+        u64::try_from(i64::try_from(end).ok()?.checked_add(offset)?).ok()
+    }
+}
+
+impl<F: ReaderFactory, C: Cache<Key = u64>> Read for RewindingReader<F, C> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        let mut i = 0;
+        let inner = &mut self.inner;
+        let mut inner_pos = self.inner_pos;
+        let bs = self.block_size.get();
+        let factory = &self.factory;
+        while i < buf.len() {
+            let block = self.position / self.block_size;
+            let block = self.cache.cache(block, || {
+                if block * bs < inner_pos {
+                    *inner = factory.new_reader();
+                    inner_pos = 0;
+                }
+                if block * bs > inner_pos {
+                    let n = block * bs - inner_pos;
+                    let n = std::io::copy(&mut inner.take(n), &mut std::io::sink())?;
+                    inner_pos += n;
+                }
+                let mut data = vec![0; bs as usize];
+                let mut k = 0;
+                while k != data.len() {
+                    let m = inner.read(&mut data[k..])?;
+                    if m == 0 {
+                        break;
+                    }
+                    k += m;
+                }
+                Ok(data)
+            })?;
+            let offset = (self.position % self.block_size) as usize;
+            let src = &block[offset..];
+            let dst = &mut buf[i..];
+            let n = min(dst.len(), src.len());
+            dst[..n].copy_from_slice(&src[..n]);
+            i += n;
+            if n != src.len() {
+                self.size = Some(inner_pos);
+                break;
+            }
+        }
+        self.inner_pos = inner_pos;
+        Ok(i)
+    }
+}
+
+impl<F: ReaderFactory, C: Cache<Key = u64>> Seek for RewindingReader<F, C> {
+    fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
+        let pos = match pos {
+            SeekFrom::Start(pos) => self.from_start(pos),
+            SeekFrom::Current(pos) => self.from_current(pos),
+            SeekFrom::End(pos) => {
+                let end = if let Some(end) = self.size {
+                    end
+                } else {
+                    let end = self.inner_pos + std::io::copy(&mut self.inner, &mut std::io::sink())?;
+                    self.size = Some(end);
+                    self.inner_pos = end;
+                    end
+                };
+                self.from_end(end, pos)
+            }
+        };
+        let pos = pos.ok_or_else(|| Error::new(ErrorKind::InvalidInput, "position out of range"))?;
+        self.position = pos;
+        Ok(pos)
+    }
+}
+
+// ---
+
+pub struct RewindingReaderBuilder<F, C> {
+    factory: F,
+    block_size: NonZeroUsize,
+    cache: C,
+    position: u64,
+}
+
+impl<F: ReaderFactory, C: Cache> RewindingReaderBuilder<F, C> {
+    pub fn with_block_size(mut self, block_size: NonZeroUsize) -> Self {
+        self.block_size = block_size;
+        self
+    }
+
+    pub fn with_cache<C2: Cache>(self, cache: C2) -> RewindingReaderBuilder<F, C2> {
+        RewindingReaderBuilder {
+            factory: self.factory,
+            block_size: self.block_size,
+            cache,
+            position: self.position,
+        }
+    }
+
+    pub fn with_position(mut self, position: u64) -> Self {
+        self.position = position;
+        self
+    }
+
+    pub fn result(self) -> RewindingReader<F, C> {
+        RewindingReader {
+            inner: self.factory.new_reader(),
+            factory: self.factory,
+            block_size: self.block_size.try_into().unwrap(),
+            cache: self.cache,
+            position: self.position,
+            inner_pos: 0,
+            size: None,
+        }
     }
 }
