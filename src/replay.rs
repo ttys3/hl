@@ -13,6 +13,9 @@ use std::{
 // third-party imports
 use snap::{read::FrameDecoder, write::FrameEncoder};
 
+// local imports
+use crate::iox::ReadFill;
+
 // ---
 
 const DEFAULT_SEGMENT_SIZE: Option<NonZeroUsize> = NonZeroUsize::new(256 * 1024);
@@ -507,14 +510,9 @@ impl<F: ReaderFactory, C: Cache<Key = u64>> Read for RewindingReader<F, C> {
                     inner_pos += n;
                 }
                 let mut data = vec![0; bs as usize];
-                let mut k = 0;
-                while k != data.len() {
-                    let m = inner.read(&mut data[k..])?;
-                    if m == 0 {
-                        found_end = true;
-                        break;
-                    }
-                    k += m;
+                let k = inner.read_fill(&mut data)?;
+                if k != data.len() {
+                    found_end = true;
                 }
                 data.resize(k, 0);
                 inner_pos += u64::try_from(k).unwrap();
