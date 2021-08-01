@@ -110,7 +110,7 @@ impl IndexedInput {
         let stream: InputSeekStream = match path.extension().map(|x| x.to_str()) {
             Some(Some("gz")) => Box::new(Mutex::new(
                 RewindingReader::build(move || Ok(GzDecoder::new(BufReader::new(f()?))))
-                    .with_cache(LruCache::new(8))
+                    .cache(LruCache::new(8))
                     .result()?,
             )),
             _ => Box::new(Mutex::new(f()?)),

@@ -131,7 +131,7 @@ pub struct ReplayBufCreatorBuilder {
 
 impl ReplayBufCreatorBuilder {
     #[allow(dead_code)]
-    pub fn with_segment_size(mut self, segment_size: NonZeroUsize) -> Self {
+    pub fn segment_size(mut self, segment_size: NonZeroUsize) -> Self {
         self.segment_size = segment_size;
         self
     }
@@ -251,7 +251,7 @@ pub struct ReplayBufReaderBuilder<C> {
 }
 
 impl<C: Cache> ReplayBufReaderBuilder<C> {
-    pub fn with_cache<C2: Cache>(self, cache: C2) -> ReplayBufReaderBuilder<C2> {
+    pub fn cache<C2: Cache>(self, cache: C2) -> ReplayBufReaderBuilder<C2> {
         ReplayBufReaderBuilder {
             buf: self.buf,
             cache,
@@ -259,7 +259,7 @@ impl<C: Cache> ReplayBufReaderBuilder<C> {
         }
     }
 
-    pub fn with_position(mut self, position: usize) -> Self {
+    pub fn position(mut self, position: usize) -> Self {
         self.position = position;
         self
     }
@@ -565,12 +565,12 @@ pub struct RewindingReaderBuilder<F, C> {
 }
 
 impl<F: ReaderFactory, C: Cache> RewindingReaderBuilder<F, C> {
-    pub fn with_block_size(mut self, block_size: NonZeroUsize) -> Self {
+    pub fn block_size(mut self, block_size: NonZeroUsize) -> Self {
         self.block_size = block_size;
         self
     }
 
-    pub fn with_cache<C2: Cache>(self, cache: C2) -> RewindingReaderBuilder<F, C2> {
+    pub fn cache<C2: Cache>(self, cache: C2) -> RewindingReaderBuilder<F, C2> {
         RewindingReaderBuilder {
             factory: self.factory,
             block_size: self.block_size,
@@ -579,7 +579,7 @@ impl<F: ReaderFactory, C: Cache> RewindingReaderBuilder<F, C> {
         }
     }
 
-    pub fn with_position(mut self, position: u64) -> Self {
+    pub fn position(mut self, position: u64) -> Self {
         self.position = position;
         self
     }
