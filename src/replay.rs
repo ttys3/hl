@@ -600,23 +600,26 @@ impl<F: ReaderFactory, C: Cache> RewindingReaderBuilder<F, C> {
         })
     }
 }
+
+// ---
+
+trait ReadSeek: Read + Seek {}
+
+impl<T: Read + Seek> ReadSeek for T {}
+
 // ---
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::str;
+    use std::{io::Cursor, str};
 
     fn dual<'a>(b: &[u8]) -> (&str, &[u8]) {
         (str::from_utf8(b).unwrap(), b)
     }
 
-    #[test]
-    fn test_rewinding_reader() {
-        let mut r = RewindingReader::build(|| Ok("Lorem ipsum dolor sit amet.".as_bytes()))
-            .block_size(4.try_into().unwrap())
-            .result()
-            .unwrap();
+    fn test_rewinding_reader<F: FnOnce(usize, &str) -> Box<dyn ReadSeek>>(f: F) {
+        let mut r = f(4, "Lorem ipsum dolor sit amet.");
 
         let mut buf3 = vec![0; 3];
         assert_eq!(r.read(&mut buf3).unwrap(), 3);
@@ -650,5 +653,32 @@ mod tests {
         assert_eq!(dual(&buf3[..1]), dual(".".as_bytes()));
 
         assert_eq!(r.read(&mut buf3).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_rewinding_reader_default() {
+        test_rewinding_reader(|block_size, data| {
+            let data = data.as_bytes().to_vec();
+            Box::new(
+                RewindingReader::build(move || Ok(Cursor::new(data.clone())))
+                    .block_size(block_size.try_into().unwrap())
+                    .result()
+                    .unwrap(),
+            )
+        });
+    }
+
+    #[test]
+    fn test_rewinding_reader_lru() {
+        test_rewinding_reader(|block_size, data| {
+            let data = data.as_bytes().to_vec();
+            Box::new(
+                RewindingReader::build(move || Ok(Cursor::new(data.clone())))
+                    .block_size(block_size.try_into().unwrap())
+                    .cache(LruCache::new(3))
+                    .result()
+                    .unwrap(),
+            )
+        });
     }
 }
