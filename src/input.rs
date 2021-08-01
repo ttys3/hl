@@ -15,6 +15,7 @@ use flate2::bufread::GzDecoder;
 // local imports
 use crate::error::Result;
 use crate::index::{Index, Indexer, SourceBlock};
+use crate::iox::ReadFill;
 use crate::pool::SQPool;
 use crate::replay::{LruCache, ReplayBufCreator, ReplayBufReader, RewindingReader};
 use crate::tee::TeeReader;
@@ -247,7 +248,7 @@ impl BlockLines<IndexedInput> {
             buf.resize(source_block.size.try_into()?, 0);
             let mut stream = block.input.stream.lock().unwrap();
             stream.seek(SeekFrom::Start(source_block.offset))?;
-            stream.read(&mut buf)?;
+            stream.read_fill(&mut buf)?;
             let total = (source_block.stat.lines_valid + source_block.stat.lines_invalid).try_into()?;
             (buf, total)
         };

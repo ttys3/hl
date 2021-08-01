@@ -6,6 +6,7 @@ pub mod fmtx;
 pub mod index;
 pub mod index_capnp;
 pub mod input;
+pub mod iox;
 pub mod output;
 pub mod settings;
 pub mod theme;
