@@ -162,12 +162,6 @@ impl<II: Iterator<Item = usize>> Iterator for Blocks<IndexedInput, II> {
         self.indexes.count()
     }
 
-    // fn last(self) -> Option<Self::Item> {
-    //     self.indexes
-    //         .last()
-    //         .map(|i| Block::new(self.input.clone(), i))
-    // }
-
     #[cfg(feature = "iter_advance_by")]
     fn advance_by(&mut self, n: usize) -> Result<(), usize> {
         self.indexes.advance_by(n)

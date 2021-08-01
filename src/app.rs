@@ -239,11 +239,13 @@ impl App {
                             if line.len() == 0 {
                                 continue;
                             }
-                            let record = parser.parse(json::from_slice(line.bytes())?);
-                            if record.matches(&self.options.filter) {
-                                let offset = buf.len();
-                                formatter.format_record(&mut buf, &record);
-                                items.push((record.ts.unwrap().unix_utc().unwrap().into(), offset..buf.len()));
+                            if let Ok(record) = json::from_slice(line.bytes()) {
+                                let record = parser.parse(record);
+                                if record.matches(&self.options.filter) {
+                                    let offset = buf.len();
+                                    formatter.format_record(&mut buf, &record);
+                                    items.push((record.ts.unwrap().unix_utc().unwrap().into(), offset..buf.len()));
+                                }
                             }
                         }
 
