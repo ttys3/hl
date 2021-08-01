@@ -493,7 +493,8 @@ impl<F: ReaderFactory, C: Cache<Key = u64>> Read for RewindingReader<F, C> {
         let mut inner_pos = self.inner_pos;
         let bs = self.block_size.get();
         let factory = &self.factory;
-        while i < buf.len() {
+        let mut found_end = false;
+        while i < buf.len() && self.position < self.size.unwrap_or(u64::MAX) {
             let block = self.position / self.block_size;
             let block = self.cache.cache(block, || {
                 if block * bs < inner_pos {
@@ -510,10 +511,13 @@ impl<F: ReaderFactory, C: Cache<Key = u64>> Read for RewindingReader<F, C> {
                 while k != data.len() {
                     let m = inner.read(&mut data[k..])?;
                     if m == 0 {
+                        found_end = true;
                         break;
                     }
                     k += m;
                 }
+                data.resize(k, 0);
+                inner_pos += u64::try_from(k).unwrap();
                 Ok(data)
             })?;
             let offset = (self.position % self.block_size) as usize;
@@ -522,9 +526,9 @@ impl<F: ReaderFactory, C: Cache<Key = u64>> Read for RewindingReader<F, C> {
             let n = min(dst.len(), src.len());
             dst[..n].copy_from_slice(&src[..n]);
             i += n;
-            if n != src.len() {
+            self.position += u64::try_from(n).unwrap();
+            if found_end {
                 self.size = Some(inner_pos);
-                break;
             }
         }
         self.inner_pos = inner_pos;
@@ -594,5 +598,57 @@ impl<F: ReaderFactory, C: Cache> RewindingReaderBuilder<F, C> {
             inner_pos: 0,
             size: None,
         })
+    }
+}
+// ---
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str;
+
+    fn dual<'a>(b: &[u8]) -> (&str, &[u8]) {
+        (str::from_utf8(b).unwrap(), b)
+    }
+
+    #[test]
+    fn test_rewinding_reader() {
+        let mut r = RewindingReader::build(|| Ok("Lorem ipsum dolor sit amet.".as_bytes()))
+            .block_size(4.try_into().unwrap())
+            .result()
+            .unwrap();
+
+        let mut buf3 = vec![0; 3];
+        assert_eq!(r.read(&mut buf3).unwrap(), 3);
+        assert_eq!(dual(&buf3), dual("Lor".as_bytes()));
+
+        let mut buf4 = vec![0; 4];
+        assert_eq!(r.read(&mut buf4).unwrap(), 4);
+        assert_eq!(dual(&buf4), dual("em i".as_bytes()));
+
+        let mut buf6 = vec![0; 6];
+        assert_eq!(r.read(&mut buf6).unwrap(), 6);
+        assert_eq!(dual(&buf6), dual("psum d".as_bytes()));
+
+        assert_eq!(r.seek(SeekFrom::Start(1)).unwrap(), 1);
+
+        assert_eq!(r.read(&mut buf4).unwrap(), 4);
+        assert_eq!(dual(&buf4), dual("orem".as_bytes()));
+
+        assert_eq!(r.seek(SeekFrom::Current(7)).unwrap(), 12);
+
+        let mut buf5 = vec![0; 5];
+        assert_eq!(r.read(&mut buf5).unwrap(), 5);
+        assert_eq!(dual(&buf5), dual("dolor".as_bytes()));
+
+        assert_eq!(r.seek(SeekFrom::End(-5)).unwrap(), 22);
+
+        assert_eq!(r.read(&mut buf4).unwrap(), 4);
+        assert_eq!(dual(&buf4), dual("amet".as_bytes()));
+
+        assert_eq!(r.read(&mut buf3).unwrap(), 1);
+        assert_eq!(dual(&buf3[..1]), dual(".".as_bytes()));
+
+        assert_eq!(r.read(&mut buf3).unwrap(), 0);
     }
 }
